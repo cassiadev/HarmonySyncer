@@ -1,0 +1,29 @@
+# Gradle and Kotlin
+.gradle/
+.kotlin/
+build/
+
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+
+# Local SDK configuration
+local.properties
+
+# Android build outputs and profiling captures
+.externalNativeBuild/
+.cxx/
+captures/
+*.apk
+*.aab
+*.ap_
+*.hprof
+
+# Signing keys and credentials
+*.jks
+*.keystore
+keystore.properties
+
+# OS metadata
+.DS_Store
+Thumbs.db
