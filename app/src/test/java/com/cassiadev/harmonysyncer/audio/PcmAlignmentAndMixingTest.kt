@@ -32,4 +32,28 @@ class PcmAlignmentAndMixingTest {
         assertArrayEquals(originalA, trackA)
         assertArrayEquals(originalB, trackB)
     }
+
+    @Test
+    fun `20ms delayed copy becomes identical after alignment and mixing`() {
+        val original = shortArrayOf(12_000, -9_000, Short.MAX_VALUE, Short.MIN_VALUE, 0, 2_000)
+        val delayed = ShortArray(960) + original
+
+        val aligned = alignFromOnsets(
+            trackA = original,
+            onsetA = 0,
+            trackB = delayed,
+            onsetB = 960,
+            sampleRate = 48_000,
+        )
+        val mixed = mixPcm16(
+            aligned.trackA, aligned.trackB,
+            gainA = 0.5f, gainB = 0.5f,
+        )
+
+        assertEquals(960, aligned.originalOffsetFrames)
+        assertEquals(20.0, aligned.originalOffsetMs, 0.000001)
+        assertArrayEquals(original, aligned.trackA)
+        assertArrayEquals(original, aligned.trackB)
+        assertArrayEquals(original, mixed)
+    }
 }
