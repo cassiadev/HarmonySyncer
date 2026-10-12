@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="18.75%"
+    android:insetTop="18.75%"
+    android:insetRight="18.75%"
+    android:insetBottom="18.75%">
+    <bitmap
+        android:src="@drawable/ic_launcher_monochrome_art"
+        android:gravity="fill"
+        android:filter="true" />
+</inset>
