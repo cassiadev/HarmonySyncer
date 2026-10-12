@@ -1,3 +1,28 @@
 <resources>
     <string name="app_name">HarmonySyncer</string>
+    <string name="preview_intro">두 음성을 골라 음량과 시작 위치를 맞춰 들어보세요.</string>
+    <string name="supported_audio">15초 이하 WAV · 16비트 PCM · 모노\n두 파일의 샘플레이트가 같아야 합니다.</string>
+    <string name="track_a">음성 A</string>
+    <string name="track_b">음성 B</string>
+    <string name="select_track_a">음성 A 선택</string>
+    <string name="select_track_b">음성 B 선택</string>
+    <string name="no_file_selected">선택된 파일이 없습니다.</string>
+    <string name="clip_details">%1$.1f초 · %2$d Hz</string>
+    <string name="mix_controls">합쳐 듣기 조절</string>
+    <string name="volume_a">A 음량</string>
+    <string name="volume_b">B 음량</string>
+    <string name="volume_value">%1$d%%</string>
+    <string name="offset_b">B 추가 이동</string>
+    <string name="offset_value">%1$s ms</string>
+    <string name="offset_earlier">−300 ms · B 먼저</string>
+    <string name="offset_later">+300 ms · B 늦게</string>
+    <string name="reset_offset">이동값 0으로</string>
+    <string name="mix_hint">양수는 B를 늦게, 음수는 B를 먼저 재생합니다. 음성 앞부분은 자르지 않습니다. 조절값은 다음 재생부터 반영됩니다.</string>
+    <string name="status_loading">파일을 읽는 중입니다…</string>
+    <string name="status_playing">합쳐 듣는 중입니다.</string>
+    <string name="status_ready">준비됐습니다. 합쳐 듣기를 눌러주세요.</string>
+    <string name="status_select_files">음성 A와 B를 선택해주세요.</string>
+    <string name="play_preview">합쳐 듣기</string>
+    <string name="stop_preview">정지</string>
+    <string name="restart_hint">정지 후 다시 재생하면 처음부터 시작합니다.</string>
 </resources>
