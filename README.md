@@ -3,38 +3,20 @@
 English | [한국어](README.ko.md)
 
 HarmonySyncer is an Android prototype for aligning and mixing vocal recordings.
-The app now supports **file selection → existing alignment → volume and start-position
-adjustment → mixed audio preview**. Choose two recordings through Android's system file
-picker, adjust each track, and listen to the resulting mix.
+Choose two recordings through the system file picker, adjust their volumes and
+relative start positions, and listen to the resulting mix.
 
-**Development status: file loading, preview controls, and playback are implemented.**
-Automatic onset detection and measurement of the device's actual audio timing remain
-future work.
-
-## Current capabilities
-
-| Capability | Status |
-| --- | --- |
-| Select A and B through the system file picker | Implemented; WAV PCM16 mono, up to 15 seconds and 8 MiB per file |
-| Validate sample rates before mixing | Implemented; positive rates up to 192 kHz, with matching rates required |
-| Reuse the existing supplied-reference-point alignment | Implemented; external files use reference point 0 for both tracks |
-| Adjust A/B volume and B's relative start position | Implemented; 0–100% per track and −300 to +300 ms |
-| Mix into one PCM16 buffer, play, stop, and restart | Implemented; playback resources are released on completion or cancellation |
-| Verify file parsing, alignment, mixing, and controller behavior with JUnit 4 | Implemented |
-| Load and mix bundled soprano and alto recordings | Existing code and assets retained; no bundled-demo button in the current app |
-| Measure relative timing error from external recordings | Planned; no physical output results are available |
-
-The existing alignment accepts supplied onset indices. The app passes `0` for both
-selected files, preserving their original beginnings; it does **not** automatically
-detect or estimate the delay between voices. Pitch changes, playback drift correction,
-and audio export are outside the current scope. The repository contains an Android app.
+The app reuses supplied-onset alignment with both reference indices set to `0`,
+preserving each file's beginning. It does **not** detect delays automatically.
+Pitch changes, playback drift correction, and audio export are outside the current scope.
 
 ## Using the preview
 
-1. Select a WAV file for A and another for B. Each must contain nonempty, uncompressed,
-   16-bit mono PCM at a positive sample rate no higher than 192 kHz, be no longer than
-   15 seconds, and be no larger than 8 MiB. Both files must have the same sample rate;
-   the app does not resample them. The device must support that rate for playback.
+1. Select a Waveform Audio File Format (WAV) file for A and another for B. Each must
+   contain nonempty, uncompressed, 16-bit mono pulse-code modulation (PCM) audio,
+   at a positive sample rate no higher than 192 kHz, no longer than 15 seconds,
+   and no larger than 8 MiB. Both files must have the same sample rate; the app does
+   not resample them. The device must support that rate for playback.
 2. Set each volume between 0 and 100% and adjust B's additional offset between −300
    and +300 ms. A positive offset starts B later than A. A negative offset starts B
    earlier relative to A by adding silence before A. Padding preserves both tracks'
@@ -105,23 +87,14 @@ attribution, reference points, format details, and regeneration instructions.
 
 ## Working with the code
 
-- [App entry point](app/src/main/java/com/cassiadev/harmonysyncer/MainActivity.kt) and
-  [preview screen](app/src/main/java/com/cassiadev/harmonysyncer/ui/AudioPreviewScreen.kt):
-  system file pickers, lifecycle handling, and Compose controls.
-- [File loader](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioFileLoader.kt) and
-  [WAV reader](app/src/main/java/com/cassiadev/harmonysyncer/audio/WavPcmReader.kt):
-  URI access on a worker thread and bounded, validated PCM16 decoding.
-- [Preview processing](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreview.kt):
-  supplied-onset alignment, manual offset padding, and volume-scaled mixing.
-- [Preview controller](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioPreviewController.kt):
-  selected clips, settings, loading/playback status, and canceled-session handling.
-- [Preview player](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreviewPlayer.kt):
-  one static AudioTrack, completion tracking, and resource cleanup.
-- [Audio tests](app/src/test/java/com/cassiadev/harmonysyncer/audio): JUnit 4 regression
-  tests for WAV validation, offsets, gains, lifecycle behavior, existing alignment,
-  and bundled audio.
-- [Asset preparation script](tools/prepare_demo_vocals.py): conversion of the fixed
-  source recordings outside the app.
+| Area | Files |
+| --- | --- |
+| Screen and lifecycle | [MainActivity](app/src/main/java/com/cassiadev/harmonysyncer/MainActivity.kt), [AudioPreviewScreen](app/src/main/java/com/cassiadev/harmonysyncer/ui/AudioPreviewScreen.kt) |
+| File loading and validation | [AudioFileLoader](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioFileLoader.kt), [WavPcmReader](app/src/main/java/com/cassiadev/harmonysyncer/audio/WavPcmReader.kt) |
+| Mixing and preview state | [PcmPreview](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreview.kt), [AudioPreviewController](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioPreviewController.kt) |
+| Playback | [PcmPreviewPlayer](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreviewPlayer.kt): releases resources after completion or cancellation |
+| Regression tests | [Audio tests](app/src/test/java/com/cassiadev/harmonysyncer/audio), [Device tests](app/src/androidTest/java/com/cassiadev/harmonysyncer) |
+| Asset preparation | [prepare_demo_vocals.py](tools/prepare_demo_vocals.py) |
 
 Loading, rendering, and playback run off the UI thread. Unit tests verify calculations,
 data integrity, and controller state; they do not measure the timing of sound emitted
@@ -129,28 +102,18 @@ by a speaker.
 
 ## Manual acceptance checklist
 
-Use two short PCM16 mono WAV files with matching sample rates. A clear click or onset
-in each makes relative timing easier to hear.
+Use two short compatible files with clear clicks or onsets to check the
+[preview behavior](#using-the-preview):
 
-- Select A and B and confirm their filenames, durations, and rates appear. Preview
-  becomes available only after both compatible files have loaded.
-- Cancel a replacement selection, then try a malformed, unsupported, overlong, or
-  oversized WAV. Confirm the previous file, volumes, and offset are retained, with a
-  readable error for failed loading. Successfully replace a file and confirm only
-  the offset resets to 0 ms.
-- Select files with different rates and confirm preview is disabled with a mismatch
-  message. Replace one with a matching-rate file and confirm preview becomes available.
-- Play at the default settings, then stop. Set B to 0%, play again, and confirm only A
-  is audible. Restore B's volume before checking offsets.
-- Set B's offset to +100 ms and confirm B starts later. Check a negative offset too:
-  B starts earlier relative to A, with neither track's beginning or tail discarded.
-  Reset to 0 ms and confirm the baseline timing returns.
-- Stop and replay several times, including shortly after starting. Confirm every
-  replay starts at the beginning and no previous playback continues alongside it.
-- Confirm file selection and sliders are disabled while loading or playing, and
-  become available when playback ends or is stopped.
-- Send the app to the background during playback and confirm audio stops. Leave the
-  screen and confirm no playback remains active.
+- Select A and B; verify filenames, durations, rates, and preview availability.
+- Cancel a replacement and try malformed, unsupported, overlong, and oversized files;
+  verify readable errors and retained files/settings. A valid replacement resets only the offset.
+- Try mismatched rates, then replace one file with a compatible file to re-enable preview.
+- Play, stop, mute B, and replay; confirm only A is audible. Restore B before checking offsets.
+- Try +100 ms and negative offsets, then reset to 0; verify timing without cutting either track.
+- Stop and replay repeatedly, including shortly after starting; confirm restarts without overlap.
+- Check controls lock during loading/playback and unlock on completion or stop.
+- Background the app and leave the screen; confirm playback stops.
 
 ## Planned work
 

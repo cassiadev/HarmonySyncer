@@ -66,7 +66,6 @@ class AudioPreviewController internal constructor(
     private var clipB: PcmClip? = null
     private var loadJob: Job? = null
     private var playbackJob: Job? = null
-    private var loadSession = 0L
     private var playbackSession = 0L
     private var closed = false
 
@@ -75,13 +74,12 @@ class AudioPreviewController internal constructor(
     /** Also permits loaders that do not use Android URIs, including JVM lifecycle tests. */
     internal fun selectFile(slot: TrackSlot, load: suspend () -> LoadedAudioFile) {
         if (closed || !state.canEdit) return
-        val session = ++loadSession
         state = state.copy(isLoading = true, error = null)
         loadJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val loaded = withContext(ioDispatcher) { load() }
                 ensureActive()
-                if (closed || session != loadSession) return@launch
+                if (closed) return@launch
                 val info = ClipInfo(loaded.name, loaded.clip.sampleRate, loaded.clip.samples.size)
                 when (slot) {
                     TrackSlot.A -> {
@@ -100,11 +98,11 @@ class AudioPreviewController internal constructor(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: Exception) {
-                if (!closed && session == loadSession) {
+                if (!closed) {
                     state = state.copy(error = failure.message ?: "파일을 읽을 수 없습니다. 다시 선택해 주세요.")
                 }
             } finally {
-                if (!closed && session == loadSession) {
+                if (!closed) {
                     loadJob = null
                     state = state.copy(isLoading = false)
                 }
@@ -130,11 +128,6 @@ class AudioPreviewController internal constructor(
         val a = clipA ?: return
         val b = clipB ?: return
         val settings = state.settings
-        // Check before alignment so differently sampled inputs never share a frame grid.
-        compatibilityError()?.let { error ->
-            state = state.copy(error = error)
-            return
-        }
         val session = ++playbackSession
         // Reserve the session synchronously; repeated taps cannot launch another mix.
         state = state.copy(isPlaying = true, error = null)
@@ -172,7 +165,6 @@ class AudioPreviewController internal constructor(
         if (closed) return
         stop()
         closed = true
-        loadSession++
         loadJob?.cancel()
         loadJob = null
         clipA = null

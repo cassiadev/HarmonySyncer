@@ -3,37 +3,19 @@
 [English](README.md) | 한국어
 
 HarmonySyncer는 음성 녹음의 타이밍을 맞추고 혼합하는 Android 프로토타입입니다.
-현재 앱에서는 **파일 선택 → 기존 정렬 → 음량·시작 위치 조절 → 합쳐서 미리 듣기**를
-지원합니다. Android 시스템 파일 선택기로 두 녹음을 고르고, 트랙별 설정을 조절해
-혼합 결과를 들을 수 있습니다.
+시스템 파일 선택기로 두 녹음을 고르고 음량과 상대 시작 위치를 조절해 혼합 결과를 들을 수 있습니다.
 
-**현재 개발 상태: 파일 읽기, 미리 듣기 조작 UI, 재생을 구현했습니다.**
-시작 지점 자동 감지와 기기의 실제 출력 타이밍 측정은 추후 작업입니다.
-
-## 현재 기능
-
-| 기능 | 상태 |
-| --- | --- |
-| 시스템 파일 선택기로 A·B 선택 | 구현됨; WAV PCM16 모노, 파일별 최대 15초·8 MiB |
-| 혼합 전 샘플레이트 검증 | 구현됨; 0보다 크고 192 kHz 이하, 두 파일의 샘플레이트 일치 필요 |
-| 기존의 지정 기준점 정렬 재사용 | 구현됨; 외부 파일은 두 트랙 모두 기준점 0 사용 |
-| A·B 음량과 B의 상대 시작 위치 조절 | 구현됨; 트랙별 0~100%, −300~+300 ms |
-| 하나의 PCM16 버퍼로 혼합해 재생·정지·재시작 | 구현됨; 재생 완료·취소 시 재생 자원 해제 |
-| JUnit 4로 파일 해석·정렬·혼합·컨트롤러 동작 검증 | 구현됨 |
-| 포함된 소프라노·알토 녹음 읽기와 혼합 | 기존 코드·음원 유지; 현재 앱에는 포함 음원 데모 버튼 없음 |
-| 외부 녹음으로 상대 타이밍 오차 측정 | 예정; 실제 출력 측정 결과는 아직 없음 |
-
-기존 정렬은 전달받은 시작 지점 인덱스를 사용합니다. 앱은 선택한 두 파일에 모두 `0`을
-전달하므로 원래 시작 부분을 유지합니다. 서로 다른 음성의 시작 지점이나 지연을
-**자동으로 감지·추정하지 않습니다.** 피치 변경, 재생 중 드리프트 보정, 오디오 내보내기는
-현재 범위에 포함되지 않습니다. 저장소에는 Android 앱이 있습니다.
+앱은 기존의 지정 시작 지점 정렬에 두 기준점 모두 `0`을 전달해 각 파일의 원래 시작 부분을
+유지합니다. 지연을 **자동으로 감지하지 않습니다.** 피치 변경, 재생 중 드리프트 보정,
+오디오 내보내기는 현재 범위에 포함되지 않습니다.
 
 ## 미리 듣기 사용법
 
-1. A와 B에 WAV 파일을 하나씩 선택합니다. 파일은 오디오 데이터가 있는 비압축 16비트
-   모노 PCM이어야 하며, 샘플레이트는 0보다 크고 192 kHz 이하여야 합니다. 파일별 최대
-   길이는 15초, 최대 크기는 8 MiB입니다. 두 파일의 샘플레이트가 같아야 하며 앱은
-   샘플레이트를 변환하지 않습니다. 재생하려면 기기에서도 해당 샘플레이트를 지원해야 합니다.
+1. A와 B에 Waveform Audio File Format(WAV, 오디오 파일 형식) 파일을 하나씩 선택합니다.
+   오디오 데이터가 있는 비압축 16비트 모노 Pulse-Code Modulation(PCM, 펄스 부호 변조)
+   음원이어야 하며, 샘플레이트는 0보다 크고 192 kHz 이하여야 합니다. 파일별 최대 길이는
+   15초, 최대 크기는 8 MiB입니다. 두 파일의 샘플레이트가 같아야 하며 앱은 샘플레이트를
+   변환하지 않습니다. 재생하려면 기기에서도 해당 샘플레이트를 지원해야 합니다.
 2. 트랙별 음량을 0~100%로 설정하고 B 추가 이동을 −300~+300 ms로 조절합니다.
    양수는 B를 A보다 늦게 시작합니다. 음수는 A 앞에 무음을 넣어 B를 A보다 상대적으로
    먼저 시작합니다. 무음 추가로 두 트랙의 앞부분과 꼬리를 모두 유지하며, 읽어 둔 원본
@@ -104,48 +86,31 @@ PCM 파일은 프로젝트에 포함돼 있습니다. Python과 FFmpeg는 개발
 
 ## 코드 안내
 
-- [앱 진입점](app/src/main/java/com/cassiadev/harmonysyncer/MainActivity.kt)과
-  [미리 듣기 화면](app/src/main/java/com/cassiadev/harmonysyncer/ui/AudioPreviewScreen.kt):
-  시스템 파일 선택기, 생명주기 처리, Compose 조작 UI.
-- [파일 로더](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioFileLoader.kt)와
-  [WAV 리더](app/src/main/java/com/cassiadev/harmonysyncer/audio/WavPcmReader.kt):
-  작업 스레드에서 URI 접근 및 크기·형식을 검증하는 PCM16 해석.
-- [미리 듣기 처리](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreview.kt):
-  지정 시작 지점 정렬, 수동 이동을 위한 무음 추가, 음량을 적용한 혼합.
-- [미리 듣기 컨트롤러](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioPreviewController.kt):
-  선택한 음원, 설정, 로딩·재생 상태, 취소된 세션 처리.
-- [미리 듣기 재생기](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreviewPlayer.kt):
-  하나의 정적 AudioTrack, 재생 완료 확인, 자원 정리.
-- [음성 테스트](app/src/test/java/com/cassiadev/harmonysyncer/audio): WAV 검증, 이동,
-  음량, 생명주기, 기존 정렬, 포함 음원 등을 확인하는 JUnit 4 회귀 테스트.
-- [음원 준비 스크립트](tools/prepare_demo_vocals.py): 앱 밖에서 고정 원본 녹음을 변환하는 도구.
+| 역할 | 파일 |
+| --- | --- |
+| 화면과 생명주기 | [MainActivity](app/src/main/java/com/cassiadev/harmonysyncer/MainActivity.kt), [AudioPreviewScreen](app/src/main/java/com/cassiadev/harmonysyncer/ui/AudioPreviewScreen.kt) |
+| 파일 읽기와 검증 | [AudioFileLoader](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioFileLoader.kt), [WavPcmReader](app/src/main/java/com/cassiadev/harmonysyncer/audio/WavPcmReader.kt) |
+| 혼합과 미리 듣기 상태 | [PcmPreview](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreview.kt), [AudioPreviewController](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioPreviewController.kt) |
+| 재생 | [PcmPreviewPlayer](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreviewPlayer.kt): 완료·취소 시 재생 자원 해제 |
+| 회귀 테스트 | [음성 테스트](app/src/test/java/com/cassiadev/harmonysyncer/audio), [실단말 테스트](app/src/androidTest/java/com/cassiadev/harmonysyncer) |
+| 음원 준비 | [prepare_demo_vocals.py](tools/prepare_demo_vocals.py) |
 
 로딩·혼합·재생은 UI 스레드 밖에서 실행합니다. 단위 테스트는 계산, 데이터 무결성,
 컨트롤러 상태를 검증하며, 스피커로 출력된 소리의 타이밍을 측정하지 않습니다.
 
 ## 수동 확인 목록
 
-샘플레이트가 같은 짧은 PCM16 모노 WAV 두 개를 준비합니다. 각 파일에 뚜렷한 클릭이나
-시작 소리가 있으면 상대 타이밍을 듣기 쉽습니다.
+뚜렷한 클릭이나 시작 소리가 있는 짧은 호환 파일 두 개로 [미리 듣기 동작](#미리-듣기-사용법)을 확인합니다.
 
-- A·B를 선택하고 파일명, 길이, 샘플레이트가 표시되는지 확인합니다. 두 호환 파일을
-  모두 읽은 뒤에만 미리 듣기가 활성화돼야 합니다.
-- 교체 파일 선택을 취소한 뒤, 잘못된 형식·지원하지 않는 형식·길이 초과·크기 초과
-  WAV도 선택해 봅니다. 이전 파일·음량·이동이 유지되고 읽기 실패 시 이해할 수 있는
-  오류가 표시되는지 확인합니다. 정상 파일로 교체하면 이동만 0 ms로 초기화돼야 합니다.
-- 샘플레이트가 다른 두 파일을 선택해 불일치 오류와 미리 듣기 비활성화를 확인합니다.
-  한 파일을 같은 샘플레이트로 교체하면 미리 듣기가 다시 활성화돼야 합니다.
-- 기본 설정으로 재생한 뒤 정지합니다. B를 0%로 설정하고 다시 재생해 A만 들리는지
-  확인합니다. 이동을 확인하기 전에 B 음량을 복원합니다.
-- B를 +100 ms 이동해 B가 늦게 시작하는지 확인합니다. 음수 이동도 확인해 B가 A보다
-  상대적으로 먼저 시작하고 두 트랙의 앞부분·꼬리가 잘리지 않는지 확인합니다.
-  0 ms로 초기화하면 원래 타이밍으로 돌아와야 합니다.
-- 재생 직후 정지를 포함해 정지·재생을 여러 번 반복합니다. 매번 처음부터 재생되고
-  이전 재생이 겹쳐 들리지 않는지 확인합니다.
-- 로딩·재생 중 파일 선택과 슬라이더가 비활성화되고, 재생 완료·정지 후 다시
-  활성화되는지 확인합니다.
-- 재생 중 앱을 백그라운드로 보내 소리가 멈추는지 확인합니다. 화면을 벗어난 후에도
-  재생이 남아 있지 않아야 합니다.
+- A·B를 선택하고 파일명, 길이, 샘플레이트, 미리 듣기 활성화를 확인합니다.
+- 교체 선택을 취소하고 잘못된 형식·지원하지 않는 형식·길이 초과·크기 초과 파일을 시도합니다.
+  오류 메시지와 이전 파일·설정 유지를 확인합니다. 정상 교체 시 이동만 초기화돼야 합니다.
+- 샘플레이트가 다른 파일을 선택한 뒤 호환 파일로 교체해 미리 듣기 재활성화를 확인합니다.
+- 재생·정지 후 B를 음소거하고 다시 재생해 A만 들리는지 확인합니다. 이동 확인 전에 B 음량을 복원합니다.
+- +100 ms와 음수 이동을 적용하고 0으로 초기화해 타이밍과 두 트랙의 앞부분·꼬리 보존을 확인합니다.
+- 재생 직후 정지를 포함해 정지·재생을 반복하고, 겹침 없이 처음부터 재생되는지 확인합니다.
+- 로딩·재생 중 조작이 잠기고 완료·정지 후 다시 활성화되는지 확인합니다.
+- 앱을 백그라운드로 보내고 화면을 벗어나 재생 정지를 확인합니다.
 
 ## 개발 예정 기능
 
