@@ -26,17 +26,26 @@ data class MixSettings(
  * Milliseconds are converted to the nearest whole frame, rounding half frames up
  * for either direction. Neither input buffer is changed or shared with the result.
  *
- * Both clips must be nonempty and have the same sample rate in `1..192_000` Hz.
+ * Both clips must be nonempty with sample rates in `1..192_000` Hz. Different
+ * rates are resampled to the higher rate before offsets and mixing are applied.
  * Volumes must be finite and in `0f..1f`, and the manual offset must be in
  * `-300..300` milliseconds.
  */
-fun renderPreview(a: PcmClip, b: PcmClip, settings: MixSettings): PcmClip {
+fun renderPreview(
+    a: PcmClip,
+    b: PcmClip,
+    settings: MixSettings,
+    checkActive: () -> Unit = {},
+): PcmClip {
     validatePreviewInputs(a, b, settings)
+    val rate = maxOf(a.sampleRate, b.sampleRate)
+    val normalizedA = resamplePcmUp(a, rate, checkActive)
+    val normalizedB = resamplePcmUp(b, rate, checkActive)
 
-    val offsetFrames = (abs(settings.offsetMs).toDouble() * a.sampleRate / 1_000.0)
+    val offsetFrames = (abs(settings.offsetMs).toDouble() * rate / 1_000.0)
         .roundToInt()
-    val trackA = if (settings.offsetMs < 0) padStart(a.samples, offsetFrames) else a.samples
-    val trackB = if (settings.offsetMs > 0) padStart(b.samples, offsetFrames) else b.samples
+    val trackA = if (settings.offsetMs < 0) padStart(normalizedA.samples, offsetFrames) else normalizedA.samples
+    val trackB = if (settings.offsetMs > 0) padStart(normalizedB.samples, offsetFrames) else normalizedB.samples
 
     return PcmClip(
         samples = mixPcm16(
@@ -45,14 +54,14 @@ fun renderPreview(a: PcmClip, b: PcmClip, settings: MixSettings): PcmClip {
             gainA = settings.volumeA * 0.5f,
             gainB = settings.volumeB * 0.5f,
         ),
-        sampleRate = a.sampleRate,
+        sampleRate = rate,
     )
 }
 
 /**
  * Applies the existing supplied-onset correction once, then renders the manual mix.
  * Default zero onsets retain each clip's original beginning; no onset detection is
- * performed. Validation rejects mismatched rates before trying to align the clips.
+ * performed. Onsets are indices in each original clip, before resampling.
  */
 fun preparePreview(
     a: PcmClip,
@@ -60,14 +69,23 @@ fun preparePreview(
     settings: MixSettings,
     onsetA: Int = 0,
     onsetB: Int = 0,
+    checkActive: () -> Unit = {},
 ): PcmClip {
     validatePreviewInputs(a, b, settings)
-    val aligned = alignFromOnsets(a.samples, onsetA, b.samples, onsetB, a.sampleRate)
+    require(onsetA in a.samples.indices) { "onsetA must be a valid index in trackA" }
+    require(onsetB in b.samples.indices) { "onsetB must be a valid index in trackB" }
+    val rate = maxOf(a.sampleRate, b.sampleRate)
+    val trimmedA = if (onsetA == 0) a else PcmClip(a.samples.copyOfRange(onsetA, a.samples.size), a.sampleRate)
+    val trimmedB = if (onsetB == 0) b else PcmClip(b.samples.copyOfRange(onsetB, b.samples.size), b.sampleRate)
+    val normalizedA = resamplePcmUp(trimmedA, rate, checkActive)
+    val normalizedB = resamplePcmUp(trimmedB, rate, checkActive)
+    val aligned = alignFromOnsets(normalizedA.samples, 0, normalizedB.samples, 0, rate)
 
     return renderPreview(
-        a = PcmClip(aligned.trackA, a.sampleRate),
-        b = PcmClip(aligned.trackB, b.sampleRate),
+        a = PcmClip(aligned.trackA, rate),
+        b = PcmClip(aligned.trackB, rate),
         settings = settings,
+        checkActive = checkActive,
     )
 }
 
@@ -75,7 +93,6 @@ private fun validatePreviewInputs(a: PcmClip, b: PcmClip, settings: MixSettings)
     require(a.sampleRate in 1..PCM_MAX_SAMPLE_RATE && b.sampleRate in 1..PCM_MAX_SAMPLE_RATE) {
         "음원의 샘플레이트는 1~192,000Hz여야 합니다."
     }
-    require(a.sampleRate == b.sampleRate) { "두 음원의 샘플레이트가 같아야 합니다." }
     require(a.samples.isNotEmpty() && b.samples.isNotEmpty()) { "두 음원에 오디오 데이터가 있어야 합니다." }
     require(settings.volumeA.isFinite() && settings.volumeA in 0f..1f) {
         "A 음량은 0~100%로 설정해 주세요."

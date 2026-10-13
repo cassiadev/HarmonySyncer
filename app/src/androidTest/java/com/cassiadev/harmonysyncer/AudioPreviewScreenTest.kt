@@ -87,10 +87,10 @@ class AudioPreviewScreenTest {
     }
 
     @Test
-    fun mismatchedRatesRequireAnotherSelectionBeforePlayback() {
-        show(readyState().copy(trackB = ClipInfo("B.wav", 44_100, 44_100)))
+    fun differentRateM4aCanPlayWithWav() {
+        show(readyState().copy(trackB = ClipInfo("B.m4a", 44_100, 44_100)))
         compose.onNodeWithText("음성 B 선택").assertIsEnabled()
-        compose.onNodeWithText("합쳐 듣기").assertIsNotEnabled()
+        compose.onNodeWithText("합쳐 듣기").assertIsEnabled()
     }
 
     @Test

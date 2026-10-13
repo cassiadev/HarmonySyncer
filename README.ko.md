@@ -11,11 +11,17 @@ HarmonySyncer는 음성 녹음의 타이밍을 맞추고 혼합하는 Android �
 
 ## 미리 듣기 사용법
 
-1. A와 B에 Waveform Audio File Format(WAV, 오디오 파일 형식) 파일을 하나씩 선택합니다.
-   오디오 데이터가 있는 비압축 16비트 모노 Pulse-Code Modulation(PCM, 펄스 부호 변조)
-   음원이어야 하며, 샘플레이트는 0보다 크고 192 kHz 이하여야 합니다. 파일별 최대 길이는
-   1분(60초), 최대 크기는 32 MiB입니다. 두 파일의 샘플레이트가 같아야 하며 앱은 샘플레이트를
-   변환하지 않습니다. 재생하려면 기기에서도 해당 샘플레이트를 지원해야 합니다.
+1. A와 B에 Waveform Audio File Format(WAV, 오디오 파일 형식) 또는
+   MPEG-4 Audio(M4A, 압축 오디오 파일 형식) 파일을 하나씩 선택합니다.
+   WAV는 비압축 16비트 모노 Pulse-Code Modulation(PCM, 펄스 부호 변조)을 지원합니다.
+   M4A는 Advanced Audio Coding(AAC, 오디오 압축 방식)의 모노·스테레오 녹음을
+   기기에서 변환하며, 스테레오의 두 채널은 평균을 내어 모노로 합칩니다.
+   Apple Lossless를 비롯한 다른 M4A 압축 방식은 지원하지 않습니다.
+   오디오 데이터가 있어야 하며, 파일별 최대 길이는 1분(60초), 최대 크기는 32 MiB입니다.
+   샘플레이트는 0보다 크고 192 kHz 이하여야 합니다. 두 파일의 샘플레이트가 다르면
+   혼합 전에 windowed-sinc 필터로 더 높은 쪽에 맞춰 소리의 길이·속도·음높이를 유지합니다.
+   재생하려면 기기에서도 해당 샘플레이트를 지원해야 합니다. 원본 파일을 변경하거나
+   외부로 전송하지 않습니다.
 2. 트랙별 음량을 0~100%로 설정하고 B 추가 이동을 −300~+300 ms로 조절합니다.
    양수는 B를 A보다 늦게 시작합니다. 음수는 A 앞에 무음을 넣어 B를 A보다 상대적으로
    먼저 시작합니다. 무음 추가로 두 트랙의 앞부분과 꼬리를 모두 유지하며, 읽어 둔 원본
@@ -30,8 +36,8 @@ HarmonySyncer는 음성 녹음의 타이밍을 맞추고 혼합하는 Android �
 
 이동 초기화 버튼은 B 추가 이동을 0 ms로 되돌립니다. 어느 파일이든 성공적으로 교체하면
 이동은 0 ms로 초기화되고 음량 설정은 유지됩니다. 파일 선택을 취소하거나 교체 파일을
-읽는 데 실패하면 이전 파일과 설정을 유지합니다. 샘플레이트가 다르면 오류를 표시하고
-호환되는 파일을 선택할 때까지 미리 듣기를 비활성화합니다. 앱이 백그라운드로 이동하면
+읽는 데 실패하면 이전 파일과 설정을 유지합니다. WAV와 M4A를 섞어 선택할 수 있으며,
+샘플레이트가 달라도 함께 재생할 수 있습니다. 앱이 백그라운드로 이동하면
 재생을 정지하고, 화면을 벗어나면 재생 자원을 해제하고 진행 중인 작업을 취소합니다.
 내보내기 기능은 없습니다.
 
@@ -54,7 +60,7 @@ Gradle 래퍼가 Gradle 9.8.1을 선택하므로 Gradle을 별도로 설치할 �
 1. 이 저장소를 복제하거나 내려받고, 루트 디렉터리를 Android Studio에서 엽니다.
 2. SDK Manager에서 SDK Platform 37을 설치하고 Gradle이 JDK 21을 사용하도록 설정합니다.
 3. Gradle 동기화를 마친 뒤 `app` 실행 구성을 선택하고 기기 또는 에뮬레이터를 지정합니다.
-4. 앱을 실행하고 호환되는 A·B WAV 파일을 선택해 미리 듣기를 사용합니다.
+4. 앱을 실행하고 A·B WAV 또는 M4A 녹음 파일을 선택해 미리 듣기를 사용합니다.
 
 ### 명령줄
 
@@ -80,7 +86,7 @@ JUnit 결과 보고서는 `app/build/reports/tests/testDebugUnitTest/index.html`
 
 PCM 파일은 프로젝트에 포함돼 있습니다. Python과 FFmpeg는 개발자가 이 파일들을
 다시 만들 때만 사용하며, Android 앱의 빌드나 실행에는 필요하지 않습니다.
-현재 앱은 외부 WAV 파일을 선택하는 UI를 제공하며, 포함 음원 데모 버튼은 없습니다.
+현재 앱은 외부 WAV·M4A 파일을 선택하는 UI를 제공하며, 포함 음원 데모 버튼은 없습니다.
 출처, 저작자 표시, 기준점, 파일 형식, 재생성 방법은
 [음원 설명서](app/src/main/assets/vocals/README.ko.md)에 정리돼 있습니다.
 
@@ -89,8 +95,8 @@ PCM 파일은 프로젝트에 포함돼 있습니다. Python과 FFmpeg는 개발
 | 역할 | 파일 |
 | --- | --- |
 | 화면과 생명주기 | [MainActivity](app/src/main/java/com/cassiadev/harmonysyncer/MainActivity.kt), [AudioPreviewScreen](app/src/main/java/com/cassiadev/harmonysyncer/ui/AudioPreviewScreen.kt) |
-| 파일 읽기와 검증 | [AudioFileLoader](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioFileLoader.kt), [WavPcmReader](app/src/main/java/com/cassiadev/harmonysyncer/audio/WavPcmReader.kt) |
-| 혼합과 미리 듣기 상태 | [PcmPreview](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreview.kt), [AudioPreviewController](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioPreviewController.kt) |
+| 파일 읽기와 검증 | [AudioFileLoader](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioFileLoader.kt), [WavPcmReader](app/src/main/java/com/cassiadev/harmonysyncer/audio/WavPcmReader.kt), [M4aPcmReader](app/src/main/java/com/cassiadev/harmonysyncer/audio/M4aPcmReader.kt) |
+| 혼합과 미리 듣기 상태 | [PcmPreview](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreview.kt), [PcmResampler](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmResampler.kt), [AudioPreviewController](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioPreviewController.kt) |
 | 재생 | [PcmPreviewPlayer](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreviewPlayer.kt): 완료·취소 시 재생 자원 해제 |
 | 회귀 테스트 | [음성 테스트](app/src/test/java/com/cassiadev/harmonysyncer/audio), [실단말 테스트](app/src/androidTest/java/com/cassiadev/harmonysyncer) |
 | 음원 준비 | [prepare_demo_vocals.py](tools/prepare_demo_vocals.py) |
@@ -105,7 +111,8 @@ PCM 파일은 프로젝트에 포함돼 있습니다. Python과 FFmpeg는 개발
 - A·B를 선택하고 파일명, 길이, 샘플레이트, 미리 듣기 활성화를 확인합니다.
 - 교체 선택을 취소하고 잘못된 형식·지원하지 않는 형식·길이 초과·크기 초과 파일을 시도합니다.
   오류 메시지와 이전 파일·설정 유지를 확인합니다. 정상 교체 시 이동만 초기화돼야 합니다.
-- 샘플레이트가 다른 파일을 선택한 뒤 호환 파일로 교체해 미리 듣기 재활성화를 확인합니다.
+- 44.1 kHz M4A와 48 kHz WAV를 함께 재생해 소리의 길이·속도·음높이가 유지되는지 확인합니다.
+- 스테레오를 포함해 M4A 두 파일을 혼합하고, 두 채널이 모노에 모두 반영되는지 확인합니다.
 - 재생·정지 후 B를 음소거하고 다시 재생해 A만 들리는지 확인합니다. 이동 확인 전에 B 음량을 복원합니다.
 - +100 ms와 음수 이동을 적용하고 0으로 초기화해 타이밍과 두 트랙의 앞부분·꼬리 보존을 확인합니다.
 - 재생 직후 정지를 포함해 정지·재생을 반복하고, 겹침 없이 처음부터 재생되는지 확인합니다.
@@ -113,6 +120,8 @@ PCM 파일은 프로젝트에 포함돼 있습니다. Python과 FFmpeg는 개발
 - 앱을 백그라운드로 보내고 화면을 벗어나 재생 정지를 확인합니다.
 
 ## 개발 예정 기능
+
+사용자가 미뤄 둔 화면 개선과 자동 타이밍 검토 메모는 [후속 작업 메모](FOLLOW_UPS.md)에 있습니다.
 
 1. 측정용 클릭과 알고 있는 지연을 추가한 뒤 30초 테스트를 녹음하고, 특정 기기와
    출력 경로에서 타이밍 정밀도를 기록합니다.

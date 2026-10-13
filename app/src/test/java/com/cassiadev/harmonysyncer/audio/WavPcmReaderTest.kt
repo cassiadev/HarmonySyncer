@@ -95,7 +95,7 @@ class WavPcmReaderTest {
 
     @Test
     fun `rejects files over the total limit before reading chunk data`() {
-        val header = riffHeader(WAV_MAX_FILE_BYTES.toLong() - 7)
+        val header = riffHeader(AUDIO_MAX_FILE_BYTES.toLong() - 7)
         val stream = ByteArrayInputStream(header)
 
         val exception = assertThrows(IllegalArgumentException::class.java) { readWavPcm16(stream) }
@@ -114,8 +114,8 @@ class WavPcmReaderTest {
     @Test
     fun `includes unknown chunks in the total file bound`() {
         val knownChunks = format() + data(shortArrayOf(1))
-        val unknownHeader = ascii("JUNK") + u32(WAV_MAX_FILE_BYTES.toLong())
-        val file = riffHeader(4L + knownChunks.size + 8 + WAV_MAX_FILE_BYTES) + knownChunks + unknownHeader
+        val unknownHeader = ascii("JUNK") + u32(AUDIO_MAX_FILE_BYTES.toLong())
+        val file = riffHeader(4L + knownChunks.size + 8 + AUDIO_MAX_FILE_BYTES) + knownChunks + unknownHeader
 
         assertTrue(invalid(file).message.orEmpty().contains("32 MiB"))
     }

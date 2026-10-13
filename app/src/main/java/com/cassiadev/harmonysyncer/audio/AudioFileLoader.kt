@@ -20,7 +20,25 @@ class AudioFileLoader(private val resolver: ContentResolver) {
         val clip = try {
             val input = resolver.openInputStream(uri)
                 ?: throw IllegalArgumentException("선택한 파일을 열 수 없습니다.")
-            input.use(::readWavPcm16)
+            input.buffered().use { stream ->
+                stream.mark(12)
+                val header = ByteArray(12)
+                var size = 0
+                while (size < header.size) {
+                    ensureActive()
+                    val read = stream.read(header, size, header.size - size)
+                    if (read < 0) break
+                    size += read
+                }
+                stream.reset()
+                val firstId = String(header, 0, 4, Charsets.US_ASCII)
+                val secondId = String(header, 4, 4, Charsets.US_ASCII)
+                when {
+                    firstId == "RIFF" -> readWavPcm16(stream)
+                    size == 12 && secondId == "ftyp" -> readM4aPcm16(stream)
+                    else -> throw IllegalArgumentException("WAV 또는 AAC 방식의 M4A 파일을 선택해 주세요.")
+                }
+            }
         } catch (exception: SecurityException) {
             throw IllegalArgumentException("파일에 접근할 수 없습니다. 파일을 다시 선택해 주세요.", exception)
         } catch (exception: IOException) {
@@ -32,7 +50,7 @@ class AudioFileLoader(private val resolver: ContentResolver) {
 
     private fun displayName(uri: Uri): String {
         val fallback = uri.lastPathSegment?.substringAfterLast('/')?.trim()
-            ?.takeIf { it.isNotEmpty() } ?: "선택한 오디오.wav"
+            ?.takeIf { it.isNotEmpty() } ?: "선택한 오디오"
         return try {
             resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
                 val column = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)

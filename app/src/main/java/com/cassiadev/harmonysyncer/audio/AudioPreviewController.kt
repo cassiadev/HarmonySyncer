@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -31,8 +32,7 @@ data class PreviewUiState(
 ) {
     val canEdit: Boolean get() = !isLoading && !isPlaying
     val canPlay: Boolean
-        get() = canEdit && trackA != null && trackB != null &&
-            trackA.sampleRate == trackB.sampleRate
+        get() = canEdit && trackA != null && trackB != null
 }
 
 /** Main-thread UI controller. Sample arrays stay private and are reused across previews. */
@@ -53,7 +53,10 @@ class AudioPreviewController internal constructor(
         ioDispatcher = Dispatchers.IO,
         renderDispatcher = Dispatchers.Default,
         loadFile = dependencies.loader::load,
-        render = { a, b, settings -> preparePreview(a, b, settings) },
+        render = { a, b, settings ->
+            val context = currentCoroutineContext()
+            preparePreview(a, b, settings, checkActive = { context.ensureActive() })
+        },
         playPreview = dependencies.player::play,
         stopPlayback = dependencies.player::stop,
         closePlayback = dependencies.player::close,
@@ -93,7 +96,7 @@ class AudioPreviewController internal constructor(
                 }
                 state = state.copy(
                     settings = state.settings.copy(offsetMs = 0),
-                    error = compatibilityError(),
+                    error = null,
                 )
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -120,7 +123,7 @@ class AudioPreviewController internal constructor(
             state = state.copy(error = "음량은 0~100%, B 추가 이동은 −300~+300밀리초로 설정해 주세요.")
             return
         }
-        state = state.copy(settings = settings, error = compatibilityError())
+        state = state.copy(settings = settings, error = null)
     }
 
     fun play() {
@@ -174,16 +177,6 @@ class AudioPreviewController internal constructor(
             closePlayback()
         } finally {
             scope.cancel()
-        }
-    }
-
-    private fun compatibilityError(): String? {
-        val a = clipA ?: return null
-        val b = clipB ?: return null
-        return if (a.sampleRate != b.sampleRate) {
-            "두 파일의 샘플레이트가 다릅니다 (A: ${a.sampleRate}Hz, B: ${b.sampleRate}Hz). 같은 샘플레이트의 파일을 선택해 주세요."
-        } else {
-            null
         }
     }
 

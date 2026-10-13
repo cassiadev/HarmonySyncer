@@ -27,3 +27,4 @@ keystore.properties
 # OS metadata
 .DS_Store
 Thumbs.db
+/FOLLOW_UPS.md

@@ -48,28 +48,22 @@ class AudioPreviewControllerTest {
     }
 
     @Test
-    fun `mismatched replacement disables play before alignment and resets only offset`() = runTest {
+    fun `different rate M4A replacement permits play and resets only offset`() = runTest {
         val harness = Harness(this)
         harness.selectPair(audio("a.wav"), audio("b.wav"))
         harness.controller.updateSettings(MixSettings(0.2f, 0.4f, -100))
 
-        harness.controller.selectFile(TrackSlot.B) { audio("different-rate.wav", 44_100) }
+        harness.controller.selectFile(TrackSlot.B) { audio("phone-recording.m4a", 44_100) }
         runCurrent()
 
-        assertEquals("different-rate.wav", harness.controller.state.trackB?.name)
+        assertEquals("phone-recording.m4a", harness.controller.state.trackB?.name)
         assertEquals(MixSettings(0.2f, 0.4f, 0), harness.controller.state.settings)
-        assertFalse(harness.controller.state.canPlay)
-        assertTrue(harness.controller.state.error.orEmpty().contains("샘플레이트"))
-        harness.controller.play()
-        runCurrent()
-        assertTrue(harness.renderRequests.isEmpty())
-
-        harness.controller.selectFile(TrackSlot.B) { audio("matching.wav") }
-        runCurrent()
         assertTrue(harness.controller.state.canPlay)
+        assertEquals(null, harness.controller.state.error)
         harness.controller.play()
         runCurrent()
         assertEquals(1, harness.renderRequests.size)
+        assertEquals(44_100, harness.renderRequests.single().b.sampleRate)
         harness.controller.close()
     }
 

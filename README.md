@@ -12,11 +12,15 @@ Pitch changes, playback drift correction, and audio export are outside the curre
 
 ## Using the preview
 
-1. Select a Waveform Audio File Format (WAV) file for A and another for B. Each must
-   contain nonempty, uncompressed, 16-bit mono pulse-code modulation (PCM) audio,
-   at a positive sample rate no higher than 192 kHz, no longer than 60 seconds,
-   and no larger than 32 MiB. Both files must have the same sample rate; the app does
-   not resample them. The device must support that rate for playback.
+1. Select a Waveform Audio File Format (WAV) or MPEG-4 Audio (M4A) file for each track.
+   WAV supports uncompressed 16-bit mono pulse-code modulation (PCM). M4A supports
+   Advanced Audio Coding (AAC) mono or stereo recordings, decoded on the device;
+   stereo channels are averaged into mono. Other M4A codecs, including Apple Lossless,
+   are unsupported. Each file must contain audio, be no longer than 60 seconds, be no
+   larger than 32 MiB, and have a positive sample rate no higher than 192 kHz.
+   Different rates are automatically matched to the higher rate before mixing using
+   a windowed-sinc filter, preserving duration and pitch. The device must support
+   that rate for playback. Original files are not modified or uploaded.
 2. Set each volume between 0 and 100% and adjust B's additional offset between −300
    and +300 ms. A positive offset starts B later than A. A negative offset starts B
    earlier relative to A by adding silence before A. Padding preserves both tracks'
@@ -31,9 +35,9 @@ Setting B to 0% mutes B while leaving A's gain unchanged.
 
 The offset reset button returns B's additional offset to 0 ms. Successfully replacing
 either file also resets the offset to 0 ms and keeps the volume settings. Canceling the
-picker or failing to load a replacement retains the previous file and settings. A
-sample-rate mismatch shows an error and disables preview until a compatible file is
-selected. Playback stops when the app goes into the background; leaving the screen
+picker or failing to load a replacement retains the previous file and settings.
+WAV and M4A may be used together, including recordings with different sample rates.
+Playback stops when the app goes into the background; leaving the screen
 releases playback resources and cancels pending work. There is no export action.
 
 ## Build and run
@@ -55,7 +59,7 @@ The first build needs internet access to download build dependencies.
 1. Clone or download this repository and open its root directory in Android Studio.
 2. Install SDK Platform 37 through SDK Manager and configure Gradle to use JDK 21.
 3. Let Gradle sync, select the `app` run configuration, and choose a device or emulator.
-4. Run the app, select compatible A and B WAV files, and use the preview controls.
+4. Run the app, select A and B WAV or M4A recordings, and use the preview controls.
 
 ### Command line
 
@@ -81,7 +85,7 @@ the same musical reference from the same performance.
 
 The PCM files are included in the project. Python and FFmpeg are only used by developers
 who want to regenerate those files; they are not required to build or run the Android app.
-The current app selects external WAV files and does not expose a bundled-demo button.
+The current app selects external WAV or M4A files and does not expose a bundled-demo button.
 See the [audio asset documentation](app/src/main/assets/vocals/README.md) for sources,
 attribution, reference points, format details, and regeneration instructions.
 
@@ -90,8 +94,8 @@ attribution, reference points, format details, and regeneration instructions.
 | Area | Files |
 | --- | --- |
 | Screen and lifecycle | [MainActivity](app/src/main/java/com/cassiadev/harmonysyncer/MainActivity.kt), [AudioPreviewScreen](app/src/main/java/com/cassiadev/harmonysyncer/ui/AudioPreviewScreen.kt) |
-| File loading and validation | [AudioFileLoader](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioFileLoader.kt), [WavPcmReader](app/src/main/java/com/cassiadev/harmonysyncer/audio/WavPcmReader.kt) |
-| Mixing and preview state | [PcmPreview](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreview.kt), [AudioPreviewController](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioPreviewController.kt) |
+| File loading and validation | [AudioFileLoader](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioFileLoader.kt), [WavPcmReader](app/src/main/java/com/cassiadev/harmonysyncer/audio/WavPcmReader.kt), [M4aPcmReader](app/src/main/java/com/cassiadev/harmonysyncer/audio/M4aPcmReader.kt) |
+| Mixing and preview state | [PcmPreview](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreview.kt), [PcmResampler](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmResampler.kt), [AudioPreviewController](app/src/main/java/com/cassiadev/harmonysyncer/audio/AudioPreviewController.kt) |
 | Playback | [PcmPreviewPlayer](app/src/main/java/com/cassiadev/harmonysyncer/audio/PcmPreviewPlayer.kt): releases resources after completion or cancellation |
 | Regression tests | [Audio tests](app/src/test/java/com/cassiadev/harmonysyncer/audio), [Device tests](app/src/androidTest/java/com/cassiadev/harmonysyncer) |
 | Asset preparation | [prepare_demo_vocals.py](tools/prepare_demo_vocals.py) |
@@ -108,7 +112,8 @@ Use two short compatible files with clear clicks or onsets to check the
 - Select A and B; verify filenames, durations, rates, and preview availability.
 - Cancel a replacement and try malformed, unsupported, overlong, and oversized files;
   verify readable errors and retained files/settings. A valid replacement resets only the offset.
-- Try mismatched rates, then replace one file with a compatible file to re-enable preview.
+- Mix a 44.1 kHz M4A with a 48 kHz WAV and verify unchanged duration and pitch.
+- Mix two M4A recordings, including stereo, and verify both channels are retained in mono.
 - Play, stop, mute B, and replay; confirm only A is audible. Restore B before checking offsets.
 - Try +100 ms and negative offsets, then reset to 0; verify timing without cutting either track.
 - Stop and replay repeatedly, including shortly after starting; confirm restarts without overlap.
@@ -116,6 +121,9 @@ Use two short compatible files with clear clicks or onsets to check the
 - Background the app and leave the screen; confirm playback stops.
 
 ## Planned work
+
+Deferred interface improvements and automatic timing ideas are recorded in the
+[follow-up notes](FOLLOW_UPS.md) (Korean).
 
 1. Add measurement clicks and a known delay, then record a 30-second test and report
    timing precision for a specific device and output path.

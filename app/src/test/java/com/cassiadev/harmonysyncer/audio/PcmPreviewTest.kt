@@ -1,9 +1,14 @@
 package com.cassiadev.harmonysyncer.audio
 
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PcmPreviewTest {
@@ -103,13 +108,12 @@ class PcmPreviewTest {
     }
 
     @Test
-    fun `rejects empty clips nonpositive rates and mismatched sample rates`() {
+    fun `rejects empty clips and nonpositive rates`() {
         val valid = clip(100)
         val invalid = listOf(
             PcmClip(shortArrayOf(), 1_000),
             PcmClip(shortArrayOf(100), 0),
             PcmClip(shortArrayOf(100), -1),
-            PcmClip(shortArrayOf(100), 44_100),
         )
 
         for (badClip in invalid) {
@@ -204,18 +208,66 @@ class PcmPreviewTest {
     }
 
     @Test
-    fun `prepare rejects rate mismatch before invoking onset alignment`() {
-        val exception = assertThrows(IllegalArgumentException::class.java) {
-            preparePreview(
-                PcmClip(shortArrayOf(100), 48_000),
-                PcmClip(shortArrayOf(200), 44_100),
-                MixSettings(),
-                onsetA = -1,
-                onsetB = 10,
-            )
-        }
+    fun `different rates preserve duration pitch and source samples when mixed`() {
+        val source = ShortArray(44_100) { (12_000 * sin(2 * PI * 1_000 * it / 44_100)).roundToInt().toShort() }
+        val original = source.copyOf()
+        val result = preparePreview(
+            PcmClip(source, 44_100),
+            PcmClip(ShortArray(48_000), 48_000),
+            MixSettings(),
+        )
 
-        assertEquals("두 음원의 샘플레이트가 같아야 합니다.", exception.message)
+        assertEquals(48_000, result.sampleRate)
+        assertEquals(48_000, result.samples.size)
+        // Compare against the independently generated tone, avoiding filter edge transients.
+        val meanError = (100 until 47_900).sumOf {
+            abs(result.samples[it] - 6_000 * sin(2 * PI * 1_000 * it / 48_000))
+        } / 47_800
+        assertTrue("Resampling changed the tone: mean error $meanError", meanError < 10)
+        assertArrayEquals(original, source)
+    }
+
+    @Test
+    fun `different rates apply volumes and offset at the shared rate`() {
+        val result = renderPreview(
+            PcmClip(ShortArray(100) { 8_000 }, 1_000),
+            PcmClip(ShortArray(200) { 4_000 }, 2_000),
+            MixSettings(volumeA = 0.5f, volumeB = 0.25f, offsetMs = 25),
+        )
+
+        assertEquals(2_000, result.sampleRate)
+        assertEquals(250, result.samples.size)
+        assertArrayEquals(ShortArray(50) { 2_000 }, result.samples.copyOfRange(0, 50))
+        assertArrayEquals(ShortArray(150) { 2_500 }, result.samples.copyOfRange(50, 200))
+        assertArrayEquals(ShortArray(50) { 500 }, result.samples.copyOfRange(200, 250))
+    }
+
+    @Test
+    fun `onsets are measured in each original rate before resampling`() {
+        val result = preparePreview(
+            PcmClip(ShortArray(150) { 4_000 }, 1_000),
+            PcmClip(ShortArray(300) { 8_000 }, 2_000),
+            MixSettings(),
+            onsetA = 100,
+            onsetB = 200,
+        )
+
+        assertEquals(2_000, result.sampleRate)
+        assertArrayEquals(ShortArray(100) { 6_000 }, result.samples)
+    }
+
+    @Test
+    fun `different rates still reject onsets outside original clips`() {
+        for (onset in intArrayOf(-1, 2)) {
+            assertThrows(IllegalArgumentException::class.java) {
+                preparePreview(
+                    PcmClip(shortArrayOf(100, 200), 24_000),
+                    PcmClip(shortArrayOf(300, 400), 48_000),
+                    MixSettings(),
+                    onsetA = onset,
+                )
+            }
+        }
     }
 
     @Test

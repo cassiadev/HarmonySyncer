@@ -2,9 +2,6 @@ package com.cassiadev.harmonysyncer.audio
 
 import java.io.InputStream
 
-const val WAV_MAX_DURATION_SECONDS = 60
-const val WAV_MAX_FILE_BYTES = 32 * 1024 * 1024
-
 /**
  * Reads one RIFF/WAVE PCM16 mono clip without closing [input].
  * Unknown chunks and their padding are consumed without keeping them in memory.
@@ -17,7 +14,7 @@ fun readWavPcm16(input: InputStream): PcmClip {
     }
     val riffSize = header.unsignedInt(4)
     require(riffSize >= 4) { "WAV 파일의 헤더가 올바르지 않습니다." }
-    require(riffSize + 8 <= WAV_MAX_FILE_BYTES) {
+    require(riffSize + 8 <= AUDIO_MAX_FILE_BYTES) {
         "WAV 파일 크기는 32 MiB 이하여야 합니다."
     }
 
@@ -88,7 +85,7 @@ private fun readFormat(input: InputStream, size: Long): Int {
 }
 
 private fun validateDuration(sampleCount: Int, sampleRate: Int) {
-    require(sampleCount.toLong() <= sampleRate.toLong() * WAV_MAX_DURATION_SECONDS) {
+    require(sampleCount.toLong() <= sampleRate.toLong() * AUDIO_MAX_DURATION_SECONDS) {
         "오디오 길이는 60초 이하여야 합니다."
     }
 }
