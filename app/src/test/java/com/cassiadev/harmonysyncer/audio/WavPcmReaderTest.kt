@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.io.SequenceInputStream
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -58,22 +59,38 @@ class WavPcmReaderTest {
     }
 
     @Test
-    fun `accepts exactly fifteen seconds and rejects one extra sample`() {
+    fun `accepts exactly sixty seconds and rejects one extra sample`() {
         val rate = 8
         assertEquals(
-            120,
-            readWavPcm16(wave(format(rate = rate), data(ShortArray(120))).inputStream()).samples.size,
+            480,
+            readWavPcm16(wave(format(rate = rate), data(ShortArray(480))).inputStream()).samples.size,
         )
 
-        val exception = invalid(wave(format(rate = rate), data(ShortArray(121))))
-        assertTrue(exception.message.orEmpty().contains("15초"))
+        val exception = invalid(wave(format(rate = rate), data(ShortArray(481))))
+        assertTrue(exception.message.orEmpty().contains("60초"))
     }
 
     @Test
     fun `checks duration when data precedes format information`() {
-        val exception = invalid(wave(data(ShortArray(121)), format(rate = 8)))
+        assertEquals(
+            480,
+            readWavPcm16(wave(data(ShortArray(480)), format(rate = 8)).inputStream()).samples.size,
+        )
+        val exception = invalid(wave(data(ShortArray(481)), format(rate = 8)))
 
-        assertTrue(exception.message.orEmpty().contains("15초"))
+        assertTrue(exception.message.orEmpty().contains("60초"))
+    }
+
+    @Test
+    fun `accepts a full minute at the maximum supported sample rate`() {
+        val header = riffHeader(23_040_036L) + format(rate = 192_000) +
+            ascii("data") + u32(23_040_000L)
+        SequenceInputStream(header.inputStream(), ByteArray(23_040_000).inputStream()).use { stream ->
+            val clip = readWavPcm16(stream)
+
+            assertEquals(192_000, clip.sampleRate)
+            assertEquals(11_520_000, clip.samples.size)
+        }
     }
 
     @Test
@@ -83,7 +100,7 @@ class WavPcmReaderTest {
 
         val exception = assertThrows(IllegalArgumentException::class.java) { readWavPcm16(stream) }
 
-        assertTrue(exception.message.orEmpty().contains("8 MiB"))
+        assertTrue(exception.message.orEmpty().contains("32 MiB"))
         assertEquals(0, stream.available())
     }
 
@@ -91,7 +108,7 @@ class WavPcmReaderTest {
     fun `rejects unsigned riff lengths without overflow`() {
         val exception = invalid(riffHeader(0xffff_ffffL))
 
-        assertTrue(exception.message.orEmpty().contains("8 MiB"))
+        assertTrue(exception.message.orEmpty().contains("32 MiB"))
     }
 
     @Test
@@ -100,7 +117,7 @@ class WavPcmReaderTest {
         val unknownHeader = ascii("JUNK") + u32(WAV_MAX_FILE_BYTES.toLong())
         val file = riffHeader(4L + knownChunks.size + 8 + WAV_MAX_FILE_BYTES) + knownChunks + unknownHeader
 
-        assertTrue(invalid(file).message.orEmpty().contains("8 MiB"))
+        assertTrue(invalid(file).message.orEmpty().contains("32 MiB"))
     }
 
     @Test

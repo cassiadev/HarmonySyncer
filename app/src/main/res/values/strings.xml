@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">HarmonySyncer</string>
     <string name="preview_intro">두 음성을 골라 음량과 시작 위치를 맞춰 들어보세요.</string>
-    <string name="supported_audio">15초 이하 WAV · 16비트 PCM · 모노\n두 파일의 샘플레이트가 같아야 합니다.</string>
+    <string name="supported_audio">1분 이하 WAV · 16비트 PCM · 모노\n두 파일의 샘플레이트가 같아야 합니다.</string>
     <string name="track_a">음성 A</string>
     <string name="track_b">음성 B</string>
     <string name="select_track_a">음성 A 선택</string>

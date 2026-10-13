@@ -14,8 +14,8 @@ Pitch changes, playback drift correction, and audio export are outside the curre
 
 1. Select a Waveform Audio File Format (WAV) file for A and another for B. Each must
    contain nonempty, uncompressed, 16-bit mono pulse-code modulation (PCM) audio,
-   at a positive sample rate no higher than 192 kHz, no longer than 15 seconds,
-   and no larger than 8 MiB. Both files must have the same sample rate; the app does
+   at a positive sample rate no higher than 192 kHz, no longer than 60 seconds,
+   and no larger than 32 MiB. Both files must have the same sample rate; the app does
    not resample them. The device must support that rate for playback.
 2. Set each volume between 0 and 100% and adjust B's additional offset between −300
    and +300 ms. A positive offset starts B later than A. A negative offset starts B
