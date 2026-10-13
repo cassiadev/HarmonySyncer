@@ -40,14 +40,14 @@ releases playback resources and cancels pending work. There is no export action.
 
 ### Requirements
 
-- Android Studio compatible with the project's Android Gradle Plugin 9.4.0.
+- Android Studio compatible with the project's Android Gradle Plugin 9.4.1.
 - JDK 21, matching the app's Java source and bytecode compatibility settings in
   [app/build.gradle.kts](app/build.gradle.kts) and the Gradle daemon version in
   [gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties).
 - Android SDK Platform 37 for building.
 - An Android device or emulator running API 29 or later to launch the app.
 
-The Gradle wrapper selects Gradle 9.6.0; a separate Gradle installation is unnecessary.
+The Gradle wrapper selects Gradle 9.8.1; a separate Gradle installation is unnecessary.
 The first build needs internet access to download build dependencies.
 
 ### Android Studio

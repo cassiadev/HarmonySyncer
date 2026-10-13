@@ -39,14 +39,14 @@ HarmonySyncer는 음성 녹음의 타이밍을 맞추고 혼합하는 Android �
 
 ### 필요한 환경
 
-- 프로젝트의 Android Gradle Plugin 9.4.0을 지원하는 Android Studio.
+- 프로젝트의 Android Gradle Plugin 9.4.1을 지원하는 Android Studio.
 - JDK 21. [app/build.gradle.kts](app/build.gradle.kts)의 Java 소스·바이트코드 호환성 설정과
   [gradle-daemon-jvm.properties](gradle/gradle-daemon-jvm.properties)의 Gradle 데몬 버전에
   맞춘 환경입니다.
 - 빌드용 Android SDK Platform 37.
 - 앱 실행용 Android API 29 이상의 기기 또는 에뮬레이터.
 
-Gradle 래퍼가 Gradle 9.6.0을 선택하므로 Gradle을 별도로 설치할 필요는 없습니다.
+Gradle 래퍼가 Gradle 9.8.1을 선택하므로 Gradle을 별도로 설치할 필요는 없습니다.
 첫 빌드에서는 빌드 의존성을 내려받기 위한 인터넷 연결이 필요합니다.
 
 ### Android Studio
