@@ -28,3 +28,6 @@ keystore.properties
 .DS_Store
 Thumbs.db
 /FOLLOW_UPS.md
+
+# Local Open Design drafts
+/design/
