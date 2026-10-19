@@ -16,6 +16,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
@@ -30,6 +31,19 @@ import com.cassiadev.harmonysyncer.audio.MixSettings
 import com.cassiadev.harmonysyncer.audio.PreviewUiState
 import com.cassiadev.harmonysyncer.ui.theme.HarmonySyncerTheme
 import kotlin.math.roundToInt
+
+/** Stable test handles that survive copy and layout changes. */
+object AudioPreviewTags {
+    const val SELECT_A = "selectA"
+    const val SELECT_B = "selectB"
+    const val NAME_A = "nameA"
+    const val NAME_B = "nameB"
+    const val VOLUME_B = "volumeB"
+    const val OFFSET = "offset"
+    const val STATUS = "status"
+    const val PLAY = "play"
+    const val STOP = "stop"
+}
 
 @Composable
 fun AudioPreviewScreen(
@@ -63,6 +77,8 @@ fun AudioPreviewScreen(
             clip = state.trackA,
             enabled = canEdit,
             onSelect = onSelectA,
+            nameTag = AudioPreviewTags.NAME_A,
+            selectTag = AudioPreviewTags.SELECT_A,
         )
         AudioFileCard(
             title = stringResource(R.string.track_b),
@@ -70,6 +86,8 @@ fun AudioPreviewScreen(
             clip = state.trackB,
             enabled = canEdit,
             onSelect = onSelectB,
+            nameTag = AudioPreviewTags.NAME_B,
+            selectTag = AudioPreviewTags.SELECT_B,
         )
 
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -89,6 +107,7 @@ fun AudioPreviewScreen(
                     value = state.settings.volumeB,
                     enabled = canEdit,
                     onChange = { onSettingsChange(state.settings.copy(volumeB = it)) },
+                    modifier = Modifier.testTag(AudioPreviewTags.VOLUME_B),
                 )
                 val offsetLabel = stringResource(R.string.offset_b)
                 val offsetValue = stringResource(
@@ -102,7 +121,7 @@ fun AudioPreviewScreen(
                     valueRange = -300f..300f,
                     steps = 599,
                     enabled = canEdit,
-                    modifier = Modifier.semantics {
+                    modifier = Modifier.testTag(AudioPreviewTags.OFFSET).semantics {
                         contentDescription = offsetLabel
                         stateDescription = offsetValue
                     },
@@ -133,7 +152,7 @@ fun AudioPreviewScreen(
                     else -> R.string.status_select_files
                 },
             ),
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            modifier = Modifier.testTag(AudioPreviewTags.STATUS).semantics { liveRegion = LiveRegionMode.Polite },
         )
         state.error?.let { error ->
             Text(
@@ -143,10 +162,14 @@ fun AudioPreviewScreen(
             )
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = onPlay, enabled = canPlay, modifier = Modifier.weight(1f)) {
+            Button(onClick = onPlay, enabled = canPlay, modifier = Modifier.weight(1f).testTag(AudioPreviewTags.PLAY)) {
                 Text(stringResource(R.string.play_preview))
             }
-            OutlinedButton(onClick = onStop, enabled = state.isPlaying, modifier = Modifier.weight(1f)) {
+            OutlinedButton(
+                onClick = onStop,
+                enabled = state.isPlaying,
+                modifier = Modifier.weight(1f).testTag(AudioPreviewTags.STOP),
+            ) {
                 Text(stringResource(R.string.stop_preview))
             }
         }
@@ -165,11 +188,13 @@ private fun AudioFileCard(
     clip: ClipInfo?,
     enabled: Boolean,
     onSelect: () -> Unit,
+    nameTag: String,
+    selectTag: String,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(clip?.name ?: stringResource(R.string.no_file_selected))
+            Text(clip?.name ?: stringResource(R.string.no_file_selected), modifier = Modifier.testTag(nameTag))
             if (clip != null) {
                 Text(
                     stringResource(R.string.clip_details, clip.frameCount / clip.sampleRate.toFloat(), clip.sampleRate),
@@ -177,13 +202,21 @@ private fun AudioFileCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            OutlinedButton(onClick = onSelect, enabled = enabled) { Text(selectLabel) }
+            OutlinedButton(onClick = onSelect, enabled = enabled, modifier = Modifier.testTag(selectTag)) {
+                Text(selectLabel)
+            }
         }
     }
 }
 
 @Composable
-private fun VolumeControl(label: String, value: Float, enabled: Boolean, onChange: (Float) -> Unit) {
+private fun VolumeControl(
+    label: String,
+    value: Float,
+    enabled: Boolean,
+    onChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val percentage = stringResource(R.string.volume_value, (value * 100).roundToInt())
     ControlLabel(label, percentage)
     Slider(
@@ -191,7 +224,7 @@ private fun VolumeControl(label: String, value: Float, enabled: Boolean, onChang
         onValueChange = { onChange((it * 100).roundToInt() / 100f) },
         steps = 99,
         enabled = enabled,
-        modifier = Modifier.semantics {
+        modifier = modifier.semantics {
             contentDescription = label
             stateDescription = percentage
         },
