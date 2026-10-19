@@ -154,11 +154,25 @@ class MainActivityRecreationTest {
         }
     }
 
+    @Test
+    fun controllerClosesOnlyWhenTheScreenFinishes() {
+        val closes = AtomicInteger()
+        useFakeController(closePlayback = { closes.incrementAndGet() })
+        launch().use { scenario ->
+            scenario.recreate()
+            assertEquals(0, closes.get())
+
+            scenario.close()
+            assertEquals(1, closes.get())
+        }
+    }
+
     /** Must run before [launch]: the first ViewModel keeps whichever controller it was given. */
     private fun useFakeController(
         loadFile: suspend (Uri) -> LoadedAudioFile = { LoadedAudioFile(FAKE_NAME, silence()) },
         playPreview: suspend (PcmClip) -> Unit = {},
         stopPlayback: () -> Unit = {},
+        closePlayback: () -> Unit = {},
     ) {
         AudioPreviewViewModel.createController = {
             AudioPreviewController(
@@ -169,7 +183,7 @@ class MainActivityRecreationTest {
                 render = { a, _, _ -> a },
                 playPreview = playPreview,
                 stopPlayback = stopPlayback,
-                closePlayback = {},
+                closePlayback = closePlayback,
             )
         }
     }
