@@ -6,8 +6,7 @@ HarmonySyncer is an Android prototype for aligning and mixing vocal recordings.
 Choose two recordings through the system file picker, adjust their volumes and
 relative start positions, and listen to the resulting mix.
 
-The app reuses supplied-onset alignment with both reference indices set to `0`,
-preserving each file's beginning. It does **not** detect delays automatically.
+The app aligns both files at supplied onsets of `0`, preserving each file's beginning. It does **not** detect delays automatically.
 Pitch changes, playback drift correction, and audio export are outside the current scope.
 
 ## Using the preview

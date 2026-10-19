@@ -41,20 +41,9 @@ fun renderPreview(
     val rate = maxOf(a.sampleRate, b.sampleRate)
     val normalizedA = resamplePcmUp(a, rate, checkActive)
     val normalizedB = resamplePcmUp(b, rate, checkActive)
-
-    val offsetFrames = (abs(settings.offsetMs).toDouble() * rate / 1_000.0)
-        .roundToInt()
-    val trackA = if (settings.offsetMs < 0) padStart(normalizedA.samples, offsetFrames) else normalizedA.samples
-    val trackB = if (settings.offsetMs > 0) padStart(normalizedB.samples, offsetFrames) else normalizedB.samples
-
     return PcmClip(
-        samples = mixPcm16(
-            trackA = trackA,
-            trackB = trackB,
-            gainA = settings.volumeA * 0.5f,
-            gainB = settings.volumeB * 0.5f,
-        ),
-        sampleRate = rate,
+        mixWithOffset(normalizedA.samples, normalizedB.samples, rate, settings, alignedLength = null, checkActive),
+        rate,
     )
 }
 
@@ -79,13 +68,11 @@ fun preparePreview(
     val trimmedB = if (onsetB == 0) b else PcmClip(b.samples.copyOfRange(onsetB, b.samples.size), b.sampleRate)
     val normalizedA = resamplePcmUp(trimmedA, rate, checkActive)
     val normalizedB = resamplePcmUp(trimmedB, rate, checkActive)
-    val aligned = alignFromOnsets(normalizedA.samples, 0, normalizedB.samples, 0, rate)
-
-    return renderPreview(
-        a = PcmClip(aligned.trackA, rate),
-        b = PcmClip(aligned.trackB, rate),
-        settings = settings,
-        checkActive = checkActive,
+    // Onset alignment treats both tracks as the longer length, so the shorter tail is silence.
+    val alignedLength = maxOf(normalizedA.samples.size, normalizedB.samples.size)
+    return PcmClip(
+        mixWithOffset(normalizedA.samples, normalizedB.samples, rate, settings, alignedLength, checkActive),
+        rate,
     )
 }
 
@@ -103,7 +90,33 @@ private fun validatePreviewInputs(a: PcmClip, b: PcmClip, settings: MixSettings)
     require(settings.offsetMs in -300..300) { "B 추가 이동은 −300~+300밀리초로 설정해 주세요." }
 }
 
-private fun padStart(samples: ShortArray, frames: Int): ShortArray {
-    require(frames <= Int.MAX_VALUE - samples.size) { "시작 위치를 조절한 음원이 너무 깁니다." }
-    return ShortArray(samples.size + frames).also { samples.copyInto(it, destinationOffset = frames) }
+/**
+ * Delays the later track by reading it from a later output frame instead of copying it.
+ * Tracks share [rate]. With [alignedLength], both count as that long before the offset.
+ */
+private fun mixWithOffset(
+    a: ShortArray,
+    b: ShortArray,
+    rate: Int,
+    settings: MixSettings,
+    alignedLength: Int?,
+    checkActive: () -> Unit,
+): ShortArray {
+    val offsetFrames = (abs(settings.offsetMs).toDouble() * rate / 1_000.0).roundToInt()
+    val startA = if (settings.offsetMs < 0) offsetFrames else 0
+    val startB = if (settings.offsetMs > 0) offsetFrames else 0
+    val lengthA = alignedLength ?: a.size
+    val lengthB = alignedLength ?: b.size
+    val delayedLength = if (settings.offsetMs < 0) lengthA else lengthB
+    require(offsetFrames <= Int.MAX_VALUE - delayedLength) { "시작 위치를 조절한 음원이 너무 깁니다." }
+    return mixPcm16(
+        trackA = a,
+        startA = startA,
+        trackB = b,
+        startB = startB,
+        length = maxOf(startA + lengthA, startB + lengthB),
+        gainA = settings.volumeA * 0.5f,
+        gainB = settings.volumeB * 0.5f,
+        checkActive = checkActive,
+    )
 }

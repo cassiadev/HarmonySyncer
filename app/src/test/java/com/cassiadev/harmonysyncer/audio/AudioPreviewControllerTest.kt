@@ -238,6 +238,52 @@ class AudioPreviewControllerTest {
         harness.controller.close()
     }
 
+    @Test
+    fun `phase tells loading, rendering and playback apart`() = runTest {
+        val harness = Harness(this)
+        val loading = CompletableDeferred<LoadedAudioFile>()
+        harness.controller.selectFile(TrackSlot.B) { loading.await() }
+        assertEquals(PreviewPhase.Loading(TrackSlot.B), harness.controller.state.phase)
+        loading.complete(audio("b.wav"))
+        runCurrent()
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+        harness.controller.selectFile(TrackSlot.A) { audio("a.wav") }
+        runCurrent()
+
+        val rendering = CompletableDeferred<PcmClip>()
+        val playing = CompletableDeferred<Unit>()
+        harness.renderBlock = { _, _, _ -> rendering.await() }
+        harness.playBlock = { playing.await() }
+        harness.controller.play()
+        assertEquals(PreviewPhase.Rendering, harness.controller.state.phase)
+        rendering.complete(audio("preview.wav").clip)
+        runCurrent()
+        assertEquals(PreviewPhase.Playing, harness.controller.state.phase)
+        playing.complete(Unit)
+        runCurrent()
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `stopping while a file loads keeps the load in progress`() = runTest {
+        val harness = Harness(this)
+        val loading = CompletableDeferred<LoadedAudioFile>()
+        harness.controller.selectFile(TrackSlot.A) { loading.await() }
+        runCurrent()
+
+        // The activity stops playback on every ON_STOP, including recreation during a load.
+        harness.controller.stop()
+        assertEquals(PreviewPhase.Loading(TrackSlot.A), harness.controller.state.phase)
+        assertFalse(harness.controller.state.canEdit)
+
+        loading.complete(audio("a.wav"))
+        runCurrent()
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+        harness.controller.close()
+    }
+
     private data class RenderRequest(val a: PcmClip, val b: PcmClip, val settings: MixSettings)
 
     private class Harness(private val testScope: TestScope) {

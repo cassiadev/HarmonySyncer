@@ -3,6 +3,7 @@ package com.cassiadev.harmonysyncer.audio
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.sin
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -280,6 +281,56 @@ class PcmPreviewTest {
                 preparePreview(clip(100, 200), clip(300, 400), MixSettings(), onsetB = onset)
             }
         }
+    }
+
+    @Test
+    fun `render pads only the delayed track while prepare first pads both to equal length`() {
+        val later = MixSettings(offsetMs = 2)
+        assertArrayEquals(
+            shortArrayOf(50, 100, 450, 600, 500),
+            renderPreview(clip(100, 200, 300, 400), clip(600, 800, 1_000), later).samples,
+        )
+        assertArrayEquals(
+            shortArrayOf(50, 100, 450, 600, 500, 0),
+            preparePreview(clip(100, 200, 300, 400), clip(600, 800, 1_000), later).samples,
+        )
+
+        val earlier = MixSettings(offsetMs = -2)
+        assertArrayEquals(
+            shortArrayOf(50, 100, 450, 600, 500),
+            renderPreview(clip(600, 800, 1_000), clip(100, 200, 300, 400), earlier).samples,
+        )
+        assertArrayEquals(
+            shortArrayOf(50, 100, 450, 600, 500, 0),
+            preparePreview(clip(600, 800, 1_000), clip(100, 200, 300, 400), earlier).samples,
+        )
+    }
+
+    @Test
+    fun `different rates are validated before either clip is resampled`() {
+        val invalidPairs = listOf(
+            PcmClip(shortArrayOf(100), 0) to PcmClip(shortArrayOf(200), 48_000),
+            PcmClip(shortArrayOf(100), 48_000) to PcmClip(shortArrayOf(200), PCM_MAX_SAMPLE_RATE + 1),
+        )
+        for ((a, b) in invalidPairs) {
+            val rendered = assertThrows(IllegalArgumentException::class.java) { renderPreview(a, b, MixSettings()) }
+            val prepared = assertThrows(IllegalArgumentException::class.java) { preparePreview(a, b, MixSettings()) }
+            assertEquals("음원의 샘플레이트는 1~192,000Hz여야 합니다.", rendered.message)
+            assertEquals(rendered.message, prepared.message)
+        }
+    }
+
+    @Test
+    fun `a stop request ends mixing without waiting for the whole mix`() {
+        // Equal rates skip resampling, so only the mixing loop can see the request.
+        var checks = 0
+        assertThrows(CancellationException::class.java) {
+            preparePreview(clip(100, 200), clip(300), MixSettings()) {
+                checks++
+                throw CancellationException("stopped")
+            }
+        }
+        assertEquals(1, checks)
     }
 
     private fun clip(vararg samples: Int): PcmClip =

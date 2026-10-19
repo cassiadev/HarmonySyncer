@@ -25,13 +25,29 @@ fun mixPcm16(
     trackB: ShortArray,
     gainA: Float = 0.5f,
     gainB: Float = 0.5f,
+): ShortArray = mixPcm16(trackA, 0, trackB, 0, maxOf(trackA.size, trackB.size), gainA, gainB)
+
+/**
+ * Mixes [length] output frames, reading [trackA] from output frame [startA] and [trackB]
+ * from [startB]. Frames outside either track are silence, so offsets need no padded copies.
+ */
+internal fun mixPcm16(
+    trackA: ShortArray,
+    startA: Int,
+    trackB: ShortArray,
+    startB: Int,
+    length: Int,
+    gainA: Float,
+    gainB: Float,
+    checkActive: () -> Unit = {},
 ): ShortArray {
     require(gainA.isFinite() && gainA >= 0f) { "gainA must be finite and non-negative" }
     require(gainB.isFinite() && gainB >= 0f) { "gainB must be finite and non-negative" }
 
-    return ShortArray(maxOf(trackA.size, trackB.size)) { index ->
-        val sampleA = trackA.getOrElse(index) { 0 }
-        val sampleB = trackB.getOrElse(index) { 0 }
+    return ShortArray(length) { index ->
+        if (index % 2_048 == 0) checkActive()
+        val sampleA = trackA.getOrElse(index - startA) { 0 }
+        val sampleB = trackB.getOrElse(index - startB) { 0 }
 
         // Double keeps even very large finite Float gains from overflowing during mixing.
         (sampleA * gainA.toDouble() + sampleB * gainB.toDouble())

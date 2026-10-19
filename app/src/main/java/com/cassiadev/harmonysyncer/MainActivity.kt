@@ -6,41 +6,28 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import com.cassiadev.harmonysyncer.audio.AudioPreviewController
 import com.cassiadev.harmonysyncer.audio.TrackSlot
 import com.cassiadev.harmonysyncer.ui.AudioPreviewScreen
 import com.cassiadev.harmonysyncer.ui.theme.HarmonySyncerTheme
 
 class MainActivity : ComponentActivity() {
+    private val previewModel: AudioPreviewViewModel by viewModels { AudioPreviewViewModel.Factory }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val controller = previewModel.controller
         setContent {
-            val controller = remember { AudioPreviewController(applicationContext) }
             val pickerA = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                 uri?.let { controller.selectFile(TrackSlot.A, it) }
             }
             val pickerB = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
                 uri?.let { controller.selectFile(TrackSlot.B, it) }
-            }
-
-            DisposableEffect(controller, lifecycle) {
-                val observer = LifecycleEventObserver { _, event ->
-                    if (event == Lifecycle.Event.ON_STOP) controller.stop()
-                }
-                lifecycle.addObserver(observer)
-                onDispose {
-                    lifecycle.removeObserver(observer)
-                    controller.close()
-                }
             }
 
             HarmonySyncerTheme {
@@ -57,5 +44,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    // Playback stops in the background and during recreation; loaded files stay in the ViewModel.
+    override fun onStop() {
+        super.onStop()
+        previewModel.controller.stop()
     }
 }
