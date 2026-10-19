@@ -197,7 +197,7 @@ private fun AudioFileCard(
             Text(clip?.name ?: stringResource(R.string.no_file_selected), modifier = Modifier.testTag(nameTag))
             if (clip != null) {
                 Text(
-                    stringResource(R.string.clip_details, clip.frameCount / clip.sampleRate.toFloat(), clip.sampleRate),
+                    stringResource(R.string.clip_details, clip.durationSeconds, clip.sampleRate),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

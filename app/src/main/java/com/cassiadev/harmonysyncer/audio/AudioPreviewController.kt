@@ -20,17 +20,28 @@ import kotlinx.coroutines.withContext
 
 enum class TrackSlot { A, B }
 
-data class ClipInfo(val name: String, val sampleRate: Int, val frameCount: Int)
+data class ClipInfo(val name: String, val sampleRate: Int, val frameCount: Int) {
+    val durationSeconds: Float get() = frameCount / sampleRate.toFloat()
+}
+
+/** What the preview is busy with; only one load or one preview runs at a time. */
+sealed interface PreviewPhase {
+    data object Idle : PreviewPhase
+    data class Loading(val slot: TrackSlot) : PreviewPhase
+    data object Rendering : PreviewPhase
+    data object Playing : PreviewPhase
+}
 
 data class PreviewUiState(
     val trackA: ClipInfo? = null,
     val trackB: ClipInfo? = null,
-    val isLoading: Boolean = false,
-    val isPlaying: Boolean = false,
+    val phase: PreviewPhase = PreviewPhase.Idle,
     val settings: MixSettings = MixSettings(),
     val error: String? = null,
 ) {
-    val canEdit: Boolean get() = !isLoading && !isPlaying
+    val isLoading: Boolean get() = phase is PreviewPhase.Loading
+    val isPlaying: Boolean get() = phase == PreviewPhase.Rendering || phase == PreviewPhase.Playing
+    val canEdit: Boolean get() = phase == PreviewPhase.Idle
     val canPlay: Boolean
         get() = canEdit && trackA != null && trackB != null
 }
@@ -77,7 +88,7 @@ class AudioPreviewController internal constructor(
     /** Also permits loaders that do not use Android URIs, including JVM lifecycle tests. */
     internal fun selectFile(slot: TrackSlot, load: suspend () -> LoadedAudioFile) {
         if (closed || !state.canEdit) return
-        state = state.copy(isLoading = true, error = null)
+        state = state.copy(phase = PreviewPhase.Loading(slot), error = null)
         loadJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val loaded = withContext(ioDispatcher) { load() }
@@ -107,7 +118,7 @@ class AudioPreviewController internal constructor(
             } finally {
                 if (!closed) {
                     loadJob = null
-                    state = state.copy(isLoading = false)
+                    state = state.copy(phase = PreviewPhase.Idle)
                 }
             }
         }
@@ -133,11 +144,12 @@ class AudioPreviewController internal constructor(
         val settings = state.settings
         val session = ++playbackSession
         // Reserve the session synchronously; repeated taps cannot launch another mix.
-        state = state.copy(isPlaying = true, error = null)
+        state = state.copy(phase = PreviewPhase.Rendering, error = null)
         playbackJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val preview = withContext(renderDispatcher) { render(a, b, settings) }
                 ensureActive()
+                state = state.copy(phase = PreviewPhase.Playing)
                 playPreview(preview)
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -149,7 +161,7 @@ class AudioPreviewController internal constructor(
                 // A stopped render/playback may finish after the next session has begun.
                 if (!closed && session == playbackSession) {
                     playbackJob = null
-                    state = state.copy(isPlaying = false)
+                    state = state.copy(phase = PreviewPhase.Idle)
                 }
             }
         }
@@ -161,7 +173,8 @@ class AudioPreviewController internal constructor(
         playbackJob?.cancel()
         playbackJob = null
         stopPlayback()
-        state = state.copy(isPlaying = false)
+        // ON_STOP also arrives while a file loads; that load must keep running.
+        if (state.isPlaying) state = state.copy(phase = PreviewPhase.Idle)
     }
 
     fun close() {
@@ -172,7 +185,7 @@ class AudioPreviewController internal constructor(
         loadJob = null
         clipA = null
         clipB = null
-        state = state.copy(isLoading = false)
+        state = state.copy(phase = PreviewPhase.Idle)
         try {
             closePlayback()
         } finally {

@@ -19,7 +19,9 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import com.cassiadev.harmonysyncer.audio.ClipInfo
 import com.cassiadev.harmonysyncer.audio.MixSettings
+import com.cassiadev.harmonysyncer.audio.PreviewPhase
 import com.cassiadev.harmonysyncer.audio.PreviewUiState
+import com.cassiadev.harmonysyncer.audio.TrackSlot
 import com.cassiadev.harmonysyncer.ui.AudioPreviewScreen
 import com.cassiadev.harmonysyncer.ui.theme.HarmonySyncerTheme
 import org.junit.Assert.assertEquals
@@ -49,8 +51,8 @@ class AudioPreviewScreenTest {
                     state = state,
                     onSelectA = {}, onSelectB = {},
                     onSettingsChange = { state = state.copy(settings = it) },
-                    onPlay = { playedSettings = state.settings; state = state.copy(isPlaying = true) },
-                    onStop = { stopped = true; state = state.copy(isPlaying = false) },
+                    onPlay = { playedSettings = state.settings; state = state.copy(phase = PreviewPhase.Playing) },
+                    onStop = { stopped = true; state = state.copy(phase = PreviewPhase.Idle) },
                 )
             }
         }
@@ -79,7 +81,7 @@ class AudioPreviewScreenTest {
 
     @Test
     fun loadingLocksFileSelectionAndPlayback() {
-        show(readyState().copy(isLoading = true))
+        show(readyState().copy(phase = PreviewPhase.Loading(TrackSlot.A)))
         compose.onNodeWithText("음성 A 선택").assertIsNotEnabled()
         compose.onNodeWithText("음성 B 선택").assertIsNotEnabled()
         compose.onNodeWithText("합쳐 듣기").assertIsNotEnabled()
