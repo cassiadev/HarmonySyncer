@@ -17,6 +17,7 @@ import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.isNotEnabled
 import androidx.compose.ui.test.junit4.v2.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -99,15 +100,17 @@ class MainActivityRecreationTest {
         useFakeController(loadFile = { loads.incrementAndGet(); loading.await() })
         launch().use { scenario ->
             compose.onNodeWithTag(AudioPreviewTags.SELECT_A).performScrollTo().performClick()
-            val loadingStatus = hasTestTag(AudioPreviewTags.STATUS) and hasText(context.getString(R.string.status_loading))
-            compose.waitUntilExactlyOneExists(loadingStatus, 5_000)
+            compose.waitUntil(5_000) { loads.get() == 1 }
+            // Locked controls, not status copy, show the load is still running.
+            val locked = hasTestTag(AudioPreviewTags.SELECT_B) and isNotEnabled()
+            compose.waitUntilExactlyOneExists(locked, 5_000)
 
             scenario.recreate()
 
-            compose.waitUntilExactlyOneExists(loadingStatus, 5_000)
-            compose.onNodeWithTag(AudioPreviewTags.SELECT_B).performScrollTo().assertIsNotEnabled()
+            compose.waitUntilExactlyOneExists(locked, 5_000)
             loading.complete(LoadedAudioFile("late.wav", silence()))
             compose.waitUntilExactlyOneExists(hasTestTag(AudioPreviewTags.NAME_A) and hasText("late.wav"), 5_000)
+            compose.waitUntilExactlyOneExists(hasTestTag(AudioPreviewTags.SELECT_B) and isEnabled(), 5_000)
             assertEquals(1, loads.get())
         }
     }

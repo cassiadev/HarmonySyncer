@@ -40,7 +40,6 @@ object AudioPreviewTags {
     const val NAME_B = "nameB"
     const val VOLUME_B = "volumeB"
     const val OFFSET = "offset"
-    const val STATUS = "status"
     const val PLAY = "play"
     const val STOP = "stop"
 }
@@ -152,7 +151,7 @@ fun AudioPreviewScreen(
                     else -> R.string.status_select_files
                 },
             ),
-            modifier = Modifier.testTag(AudioPreviewTags.STATUS).semantics { liveRegion = LiveRegionMode.Polite },
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
         )
         state.error?.let { error ->
             Text(
