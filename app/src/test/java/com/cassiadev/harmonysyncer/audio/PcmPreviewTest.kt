@@ -3,6 +3,7 @@ package com.cassiadev.harmonysyncer.audio
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.sin
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -317,6 +318,19 @@ class PcmPreviewTest {
             assertEquals("음원의 샘플레이트는 1~192,000Hz여야 합니다.", rendered.message)
             assertEquals(rendered.message, prepared.message)
         }
+    }
+
+    @Test
+    fun `a stop request ends mixing without waiting for the whole mix`() {
+        // Equal rates skip resampling, so only the mixing loop can see the request.
+        var checks = 0
+        assertThrows(CancellationException::class.java) {
+            preparePreview(clip(100, 200), clip(300), MixSettings()) {
+                checks++
+                throw CancellationException("stopped")
+            }
+        }
+        assertEquals(1, checks)
     }
 
     private fun clip(vararg samples: Int): PcmClip =
