@@ -286,6 +286,45 @@ class AudioPreviewControllerTest {
 
     private data class RenderRequest(val a: PcmClip, val b: PcmClip, val settings: MixSettings)
 
+    @Test
+    fun `failed load records its slot until another action replaces the error`() = runTest {
+        val harness = Harness(this)
+        harness.selectPair(audio("a.wav"), audio("b.wav"))
+
+        harness.controller.selectFile(TrackSlot.B) { throw IllegalArgumentException("읽을 수 없음") }
+        runCurrent()
+        assertEquals(TrackSlot.B, harness.controller.state.failedSlot)
+
+        harness.controller.selectFile(TrackSlot.A) { audio("new-a.wav") }
+        assertEquals(null, harness.controller.state.failedSlot) // cleared when the next load starts
+        runCurrent()
+
+        harness.controller.selectFile(TrackSlot.A) { throw IllegalArgumentException("읽을 수 없음") }
+        runCurrent()
+        assertEquals(TrackSlot.A, harness.controller.state.failedSlot)
+        harness.controller.play()
+        assertEquals(null, harness.controller.state.failedSlot)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `settings and playback errors are not tied to a slot`() = runTest {
+        val harness = Harness(this)
+        harness.selectPair(audio("a.wav"), audio("b.wav"))
+        harness.controller.selectFile(TrackSlot.B) { throw IllegalArgumentException("읽을 수 없음") }
+        runCurrent()
+        harness.controller.updateSettings(MixSettings(offsetMs = 999))
+        assertNotNull(harness.controller.state.error)
+        assertEquals(null, harness.controller.state.failedSlot)
+
+        harness.renderBlock = { _, _, _ -> throw IllegalStateException("재생 실패") }
+        harness.controller.play()
+        runCurrent()
+        assertEquals("재생 실패", harness.controller.state.error)
+        assertEquals(null, harness.controller.state.failedSlot)
+        harness.controller.close()
+    }
+
     private class Harness(private val testScope: TestScope) {
         private val dispatcher = StandardTestDispatcher(testScope.testScheduler)
         val ownedJob = SupervisorJob()

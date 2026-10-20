@@ -38,6 +38,8 @@ data class PreviewUiState(
     val phase: PreviewPhase = PreviewPhase.Idle,
     val settings: MixSettings = MixSettings(),
     val error: String? = null,
+    /** Set only while [error] reports a failed file load into this slot. */
+    val failedSlot: TrackSlot? = null,
 ) {
     val isLoading: Boolean get() = phase is PreviewPhase.Loading
     val isPlaying: Boolean get() = phase == PreviewPhase.Rendering || phase == PreviewPhase.Playing
@@ -88,7 +90,7 @@ class AudioPreviewController internal constructor(
     /** Also permits loaders that do not use Android URIs, including JVM lifecycle tests. */
     internal fun selectFile(slot: TrackSlot, load: suspend () -> LoadedAudioFile) {
         if (closed || !state.canEdit) return
-        state = state.copy(phase = PreviewPhase.Loading(slot), error = null)
+        state = state.copy(phase = PreviewPhase.Loading(slot), error = null, failedSlot = null)
         loadJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val loaded = withContext(ioDispatcher) { load() }
@@ -108,12 +110,16 @@ class AudioPreviewController internal constructor(
                 state = state.copy(
                     settings = state.settings.copy(offsetMs = 0),
                     error = null,
+                    failedSlot = null,
                 )
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: Exception) {
                 if (!closed) {
-                    state = state.copy(error = failure.message ?: "파일을 읽을 수 없습니다. 다시 선택해 주세요.")
+                    state = state.copy(
+                        error = failure.message ?: "파일을 읽을 수 없습니다. 다시 선택해 주세요.",
+                        failedSlot = slot,
+                    )
                 }
             } finally {
                 if (!closed) {
@@ -131,10 +137,10 @@ class AudioPreviewController internal constructor(
             settings.volumeA !in 0f..1f || settings.volumeB !in 0f..1f ||
             settings.offsetMs !in -300..300
         ) {
-            state = state.copy(error = "음량은 0~100%, B 추가 이동은 −300~+300밀리초로 설정해 주세요.")
+            state = state.copy(error = "음량은 0~100%, B 추가 이동은 −300~+300밀리초로 설정해 주세요.", failedSlot = null)
             return
         }
-        state = state.copy(settings = settings, error = null)
+        state = state.copy(settings = settings, error = null, failedSlot = null)
     }
 
     fun play() {
@@ -144,7 +150,7 @@ class AudioPreviewController internal constructor(
         val settings = state.settings
         val session = ++playbackSession
         // Reserve the session synchronously; repeated taps cannot launch another mix.
-        state = state.copy(phase = PreviewPhase.Rendering, error = null)
+        state = state.copy(phase = PreviewPhase.Rendering, error = null, failedSlot = null)
         playbackJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val preview = withContext(renderDispatcher) { render(a, b, settings) }
@@ -155,7 +161,10 @@ class AudioPreviewController internal constructor(
                 throw cancellation
             } catch (failure: Exception) {
                 if (!closed && session == playbackSession) {
-                    state = state.copy(error = failure.message ?: "미리 듣기를 재생할 수 없습니다. 다시 시도해 주세요.")
+                    state = state.copy(
+                        error = failure.message ?: "미리 듣기를 재생할 수 없습니다. 다시 시도해 주세요.",
+                        failedSlot = null,
+                    )
                 }
             } finally {
                 // A stopped render/playback may finish after the next session has begun.
