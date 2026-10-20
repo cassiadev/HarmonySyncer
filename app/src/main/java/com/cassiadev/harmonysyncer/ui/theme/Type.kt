@@ -7,6 +7,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 val Typography = Typography(
+    // Screen titles: the design's heavy display headline, in the system font.
+    headlineSmall = TextStyle(
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 28.sp,
+        lineHeight = 34.sp,
+        letterSpacing = (-0.5).sp,
+    ),
     bodyLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,
