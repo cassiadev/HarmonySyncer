@@ -58,7 +58,7 @@ class M4aImportDeviceTest {
         withFixture("over-sixty-seconds.m4a") { file ->
             val failure = runCatching { loader().load(Uri.fromFile(file)) }.exceptionOrNull()
             assertTrue(failure is IllegalArgumentException)
-            assertTrue(failure?.message.orEmpty().contains("60초"))
+            assertEquals(AUDIO_TOO_LONG_MESSAGE, failure?.message)
         }
     }
 
@@ -101,7 +101,7 @@ class M4aImportDeviceTest {
             RandomAccessFile(file, "rw").use { it.setLength(32L * 1_024 * 1_024 + 1) }
             val failure = runCatching { loader().load(Uri.fromFile(file)) }.exceptionOrNull()
             assertTrue(failure is IllegalArgumentException)
-            assertTrue(failure?.message.orEmpty().contains("32 MiB"))
+            assertEquals(AUDIO_TOO_LARGE_MESSAGE, failure?.message)
         }
     }
 

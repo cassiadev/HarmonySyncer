@@ -59,6 +59,12 @@ class WavPcmReaderTest {
     }
 
     @Test
+    fun `limit messages state the problem and the fix`() {
+        assertEquals("60초가 넘는 파일입니다. 60초 이하 파일을 선택해 주세요.", AUDIO_TOO_LONG_MESSAGE)
+        assertEquals("파일이 너무 큽니다. 32 MiB 이하 파일을 선택해 주세요.", AUDIO_TOO_LARGE_MESSAGE)
+    }
+
+    @Test
     fun `accepts exactly sixty seconds and rejects one extra sample`() {
         val rate = 8
         assertEquals(
@@ -67,7 +73,7 @@ class WavPcmReaderTest {
         )
 
         val exception = invalid(wave(format(rate = rate), data(ShortArray(481))))
-        assertTrue(exception.message.orEmpty().contains("60초"))
+        assertEquals(AUDIO_TOO_LONG_MESSAGE, exception.message)
     }
 
     @Test
@@ -78,7 +84,7 @@ class WavPcmReaderTest {
         )
         val exception = invalid(wave(data(ShortArray(481)), format(rate = 8)))
 
-        assertTrue(exception.message.orEmpty().contains("60초"))
+        assertEquals(AUDIO_TOO_LONG_MESSAGE, exception.message)
     }
 
     @Test
@@ -100,7 +106,7 @@ class WavPcmReaderTest {
 
         val exception = assertThrows(IllegalArgumentException::class.java) { readWavPcm16(stream) }
 
-        assertTrue(exception.message.orEmpty().contains("32 MiB"))
+        assertEquals(AUDIO_TOO_LARGE_MESSAGE, exception.message)
         assertEquals(0, stream.available())
     }
 
@@ -108,7 +114,7 @@ class WavPcmReaderTest {
     fun `rejects unsigned riff lengths without overflow`() {
         val exception = invalid(riffHeader(0xffff_ffffL))
 
-        assertTrue(exception.message.orEmpty().contains("32 MiB"))
+        assertEquals(AUDIO_TOO_LARGE_MESSAGE, exception.message)
     }
 
     @Test
@@ -117,7 +123,7 @@ class WavPcmReaderTest {
         val unknownHeader = ascii("JUNK") + u32(AUDIO_MAX_FILE_BYTES.toLong())
         val file = riffHeader(4L + knownChunks.size + 8 + AUDIO_MAX_FILE_BYTES) + knownChunks + unknownHeader
 
-        assertTrue(invalid(file).message.orEmpty().contains("32 MiB"))
+        assertEquals(AUDIO_TOO_LARGE_MESSAGE, invalid(file).message)
     }
 
     @Test
