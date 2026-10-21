@@ -7,6 +7,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 val Typography = Typography(
+    // Screen titles: design h1 (8vw of a 412dp screen, weight 650, -1.5px), in the system font.
+    headlineSmall = TextStyle(
+        fontWeight = FontWeight.Bold,
+        fontSize = 33.sp,
+        lineHeight = 38.sp,
+        letterSpacing = (-1.5).sp,
+    ),
     bodyLarge = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Normal,

@@ -25,7 +25,7 @@ internal suspend fun readM4aPcm16(input: InputStream): PcmClip {
         val count = input.read(buffer)
         if (count < 0) break
         require(encoded.size().toLong() + count <= AUDIO_MAX_FILE_BYTES) {
-            "오디오 파일 크기는 32 MiB 이하여야 합니다."
+            AUDIO_TOO_LARGE_MESSAGE
         }
         encoded.write(buffer, 0, count)
     }
@@ -110,7 +110,7 @@ internal suspend fun readM4aPcm16(input: InputStream): PcmClip {
                             require(info.size % (channels * 2) == 0) { "M4A 오디오 데이터가 잘렸습니다." }
                             val frames = info.size / (channels * 2)
                             val limit = rate * AUDIO_MAX_DURATION_SECONDS
-                            require(frames <= limit - sampleCount) { "오디오 길이는 60초 이하여야 합니다." }
+                            require(frames <= limit - sampleCount) { AUDIO_TOO_LONG_MESSAGE }
                             if (sampleCount + frames > samples.size) {
                                 samples = samples.copyOf(minOf(limit, maxOf(sampleCount + frames, samples.size * 2)))
                             }

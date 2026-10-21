@@ -20,13 +20,21 @@ Pitch changes, playback drift correction, and audio export are outside the curre
    Different rates are automatically matched to the higher rate before mixing using
    a windowed-sinc filter, preserving duration and pitch. The device must support
    that rate for playback. Original files are not modified or uploaded.
-2. Set each volume between 0 and 100% and adjust B's additional offset between −300
-   and +300 ms. A positive offset starts B later than A. A negative offset starts B
+2. Set each volume between 0 and 100%. Open **Timing** (타이밍 맞추기) to adjust B's
+   additional offset between −300 and +300 ms. A positive offset starts B later than A. A negative offset starts B
    earlier relative to A by adding silence before A. Padding preserves both tracks'
    beginnings and tails; the loaded source buffers remain unchanged.
 3. Play the mix. Stop it before changing files or settings, then play again to rebuild
-   the mix and restart from the beginning. Controls are disabled during loading and
-   playback; changes are not applied in real time.
+   the mix and restart from the beginning. Controls are locked during loading and
+   playback, and the screen says why: the loading card shows progress, the status line
+   names the current step, and a lock notice appears while mixing or playing. Changes
+   are not applied in real time.
+
+To hear the app without your own files, tap **Try the sample** (샘플로 들어보기) on the start
+screen. It loads an eight-second soprano (A) and alto (B) excerpt of Bruckner's *Locus iste*
+from the Dagstuhl ChoirSet, cut at the same measure, and you can adjust it like any pair.
+The recordings are licensed under CC BY 4.0; the app shows the credit and dataset link while
+a sample track is loaded. See [the bundled vocals notes](app/src/main/assets/vocals/README.md).
 
 Each volume is multiplied by `0.5` before mixing, so a 100% setting gives that track a
 linear gain of `0.5`. This preserves mixing headroom, with PCM16 saturation protection.
@@ -116,7 +124,12 @@ Use two short compatible files with clear clicks or onsets to check the
 - Play, stop, mute B, and replay; confirm only A is audible. Restore B before checking offsets.
 - Try +100 ms and negative offsets, then reset to 0; verify timing without cutting either track.
 - Stop and replay repeatedly, including shortly after starting; confirm restarts without overlap.
-- Check controls lock during loading/playback and unlock on completion or stop.
+- Check controls lock during loading/playback, the status line and lock notice explain why,
+  and controls unlock on completion or stop.
+- Tap Try the sample, play it, then change volumes and timing and play again; confirm the
+  credit line opens the dataset page and disappears once both tracks are replaced.
+- Turn on system dark mode and the largest font size; confirm nothing is clipped and text stays
+  readable.
 - Background the app and leave the screen; confirm playback stops.
 
 ## Planned work

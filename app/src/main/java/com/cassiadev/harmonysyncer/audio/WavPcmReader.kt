@@ -15,7 +15,7 @@ fun readWavPcm16(input: InputStream): PcmClip {
     val riffSize = header.unsignedInt(4)
     require(riffSize >= 4) { "WAV 파일의 헤더가 올바르지 않습니다." }
     require(riffSize + 8 <= AUDIO_MAX_FILE_BYTES) {
-        "WAV 파일 크기는 32 MiB 이하여야 합니다."
+        AUDIO_TOO_LARGE_MESSAGE
     }
 
     var remaining = riffSize - 4
@@ -86,7 +86,7 @@ private fun readFormat(input: InputStream, size: Long): Int {
 
 private fun validateDuration(sampleCount: Int, sampleRate: Int) {
     require(sampleCount.toLong() <= sampleRate.toLong() * AUDIO_MAX_DURATION_SECONDS) {
-        "오디오 길이는 60초 이하여야 합니다."
+        AUDIO_TOO_LONG_MESSAGE
     }
 }
 

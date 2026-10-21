@@ -21,6 +21,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // TalkBack announces the window title on open; there is no title bar, so only speech changes.
+        title = getString(R.string.app_name_spoken)
         val controller = previewModel.controller
         setContent {
             val pickerA = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -39,6 +41,7 @@ class MainActivity : ComponentActivity() {
                         onSettingsChange = controller::updateSettings,
                         onPlay = controller::play,
                         onStop = controller::stop,
+                        onLoadSample = controller::loadSample,
                         modifier = Modifier.padding(innerPadding),
                     )
                 }

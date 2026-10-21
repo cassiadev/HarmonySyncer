@@ -34,8 +34,10 @@ This reference does not guarantee that the singers' vocal onsets coincide at the
 
 `BundledVocalDemo.loadAligned()` reads both files and passes them to
 `alignFromOnsets(trackA, 0, trackB, 0, 48000)`.
-`loadMixed()` passes the two resulting arrays to `mixPcm16()`, explicitly setting
-`gainA = 0.5f` and `gainB = 0.5f`.
+`loadSamplePair()` wraps the two aligned arrays as 48 kHz clips named
+`Locus iste · 소프라노` (A) and `Locus iste · 알토` (B). **Try the sample** (샘플로 들어보기)
+on the start screen loads them into the A/B slots, and playback mixes them through
+`preparePreview()` like any chosen files, with the user's volumes and timing.
 Since the inputs already share a reference point, the reported original relative offset
 is 0 for these assets. This value is not a measurement of correction performance at the
 physical audio output.
@@ -43,19 +45,20 @@ physical audio output.
 Invoke loading and mixing on a worker thread. For example, from a coroutine:
 
 ```kotlin
-val pcm = withContext(Dispatchers.IO) {
-    BundledVocalDemo.loadMixed(context.assets::open)
+val (a, b) = withContext(Dispatchers.IO) {
+    BundledVocalDemo.loadSamplePair(context.assets::open)
 }
-// pcm: 384,000 mono PCM16 frames; playback sample rate: BundledVocalDemo.SAMPLE_RATE
+val preview = preparePreview(a.clip, b.clip, MixSettings())
+// preview: 384,000 mono PCM16 frames at BundledVocalDemo.SAMPLE_RATE
 ```
 
 The loader closes each stream, fails preparation if a file has an unexpected length,
 and reads samples with explicit signedness and byte order. No network access is needed
-at runtime. The current screen is not connected to a player yet.
+at runtime.
 
 `BundledVocalDemoTest` loads the same source assets that are packaged in the APK as test
-resources and compares the complete eight-second mix against an independently calculated
-SHA-256 digest.
+resources and compares the complete eight-second mix produced by `preparePreview()` at
+default settings (gain 0.5 per track) against an independently calculated SHA-256 digest.
 
 ## Attribution and license
 
