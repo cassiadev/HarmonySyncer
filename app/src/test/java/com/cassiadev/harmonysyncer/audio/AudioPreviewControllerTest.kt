@@ -22,7 +22,7 @@ import org.junit.Test
 class AudioPreviewControllerTest {
     @Test
     fun `failed replacement keeps cached audio and adjustment settings`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         val a = audio("original-a.wav")
         val b = audio("original-b.wav")
         harness.selectPair(a, b)
@@ -49,7 +49,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `different rate M4A replacement permits play and resets only offset`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         harness.selectPair(audio("a.wav"), audio("b.wav"))
         harness.controller.updateSettings(MixSettings(0.2f, 0.4f, -100))
 
@@ -69,7 +69,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `loading and playback reserve controls immediately and ignore repeated actions`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         val loading = CompletableDeferred<LoadedAudioFile>()
         harness.controller.selectFile(TrackSlot.A) { loading.await() }
         assertTrue(harness.controller.state.isLoading)
@@ -110,7 +110,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `stop during rendering never sends canceled audio to playback`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         harness.selectPair(audio("a.wav"), audio("b.wav"))
         val rendering = CompletableDeferred<PcmClip>()
         harness.renderBlock = { _, _, _ -> rendering.await() }
@@ -134,7 +134,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `old playback finally cannot clear the next playback session`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         harness.selectPair(audio("a.wav"), audio("b.wav"))
         val finishOldCleanup = CompletableDeferred<Unit>()
         val finishNewPlayback = CompletableDeferred<Unit>()
@@ -173,7 +173,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `close cancels playback and closes its owned scope exactly once`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         harness.selectPair(audio("a.wav"), audio("b.wav"))
         var playbackCleanedUp = false
         harness.playBlock = {
@@ -201,7 +201,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `close cancels loading and prevents a late selection from changing state`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         val loading = CompletableDeferred<LoadedAudioFile>()
         harness.controller.selectFile(TrackSlot.A) { loading.await() }
         runCurrent()
@@ -221,7 +221,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `playback failure restores editing and permits another attempt`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         harness.selectPair(audio("a.wav"), audio("b.wav"))
         harness.playBlock = { throw IllegalStateException("재생 장치를 준비할 수 없습니다.") }
         harness.controller.play()
@@ -240,7 +240,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `phase tells loading, rendering and playback apart`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         val loading = CompletableDeferred<LoadedAudioFile>()
         harness.controller.selectFile(TrackSlot.B) { loading.await() }
         assertEquals(PreviewPhase.Loading(TrackSlot.B), harness.controller.state.phase)
@@ -267,7 +267,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `stopping while a file loads keeps the load in progress`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         val loading = CompletableDeferred<LoadedAudioFile>()
         harness.controller.selectFile(TrackSlot.A) { loading.await() }
         runCurrent()
@@ -288,7 +288,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `failed load records its slot until another action replaces the error`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         harness.selectPair(audio("a.wav"), audio("b.wav"))
 
         harness.controller.selectFile(TrackSlot.B) { throw IllegalArgumentException("읽을 수 없음") }
@@ -309,7 +309,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `settings and playback errors are not tied to a slot`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         harness.selectPair(audio("a.wav"), audio("b.wav"))
         harness.controller.selectFile(TrackSlot.B) { throw IllegalArgumentException("읽을 수 없음") }
         runCurrent()
@@ -327,7 +327,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `sample fills both slots, resets only offset and marks the tracks`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         harness.selectPair(audio("a.wav"), audio("b.wav"))
         harness.controller.updateSettings(MixSettings(0.3f, 0.6f, 120))
         val loading = CompletableDeferred<Pair<LoadedAudioFile, LoadedAudioFile>>()
@@ -356,7 +356,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `failed sample load keeps existing clips and is not tied to a slot`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         harness.selectPair(audio("a.wav"), audio("b.wav"))
         harness.controller.selectFile(TrackSlot.B) { throw IllegalArgumentException("읽을 수 없음") }
         runCurrent()
@@ -375,7 +375,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `sample load ignores repeated and concurrent requests`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         var loads = 0
         val loading = CompletableDeferred<Pair<LoadedAudioFile, LoadedAudioFile>>()
         harness.sampleBlock = { loads++; loading.await() }
@@ -397,7 +397,7 @@ class AudioPreviewControllerTest {
 
     @Test
     fun `close during sample load prevents a late result`() = runTest {
-        val harness = Harness(this)
+        val harness = FakeAudioHarness(this)
         val loading = CompletableDeferred<Pair<LoadedAudioFile, LoadedAudioFile>>()
         harness.sampleBlock = { withContext(NonCancellable) { loading.await() } }
         harness.controller.loadSample()
@@ -409,7 +409,11 @@ class AudioPreviewControllerTest {
         assertEquals(null, harness.controller.state.trackB)
     }
 
-    private class Harness(private val testScope: TestScope) {
+    /**
+     * Builds a controller whose file loading, sample loading, rendering and playback are fakes running on
+     * the test scheduler, and records what the controller asks them to render, play, stop and close.
+     */
+    private class FakeAudioHarness(private val testScope: TestScope) {
         private val dispatcher = StandardTestDispatcher(testScope.testScheduler)
         val ownedJob = SupervisorJob()
         val renderRequests = mutableListOf<RenderRequest>()

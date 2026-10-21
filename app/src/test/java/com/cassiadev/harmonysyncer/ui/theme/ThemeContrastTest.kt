@@ -8,12 +8,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ThemeContrastTest {
+    /** The color tokens defined in the design asset, converted to sRGB. */
     @Test
-    fun `light scheme keeps the design tokens`() {
+    fun `light colors match the design asset`() {
         assertEquals(Color(0xFF006DEC), LightColors.primary)
         assertEquals(Color(0xFF007165), LightColors.secondary)
-        assertEquals(Color(0xFFFFFFFF), LightColors.background) // app.css: body { background: var(--surface) }
-        assertEquals(Color(0xFFF8F8F8), LightColors.surfaceVariant) // --bg fill
+        assertEquals(Color(0xFFFFFFFF), LightColors.background) // the design asset paints the page in Surface
+        assertEquals(Color(0xFFF8F8F8), LightColors.surfaceVariant) // subtle fill
         assertEquals(Color(0xFF182028), LightColors.onSurface)
         assertEquals(Color(0xFF5C6C7C), LightColors.onSurfaceVariant)
         assertEquals(Color(0xFFAC2724), LightColors.error)
@@ -48,8 +49,12 @@ class ThemeContrastTest {
         }
     }
 
+    /**
+     * WCAG (Web Content Accessibility Guidelines) level AA: normal-size text needs a contrast ratio
+     * of at least 4.5:1 against its background.
+     */
     @Test
-    fun `text pairs reach WCAG AA in both schemes`() {
+    fun `text pairs meet WCAG AA contrast in both schemes`() {
         for ((name, scheme, extra) in cases) {
             val pairs = mapOf(
                 "body" to (scheme.onBackground to scheme.background),

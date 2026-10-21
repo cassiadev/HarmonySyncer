@@ -2,8 +2,8 @@ package com.cassiadev.harmonysyncer.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Light is the reference: values are the design/css/tokens.css OKLCH tokens converted to sRGB.
-// --bg is a subtle fill (timing row, icon tile); the page itself is --surface, as in design/css/app.css.
+// Light is the reference: the design asset's OKLCH color tokens converted to sRGB.
+// Fill is the subtle background of the timing row and icon tile; the design asset paints the page itself in Surface.
 val LightFill = Color(0xFFF8F8F8)
 val LightSurface = Color(0xFFFFFFFF)
 val LightForeground = Color(0xFF182028)

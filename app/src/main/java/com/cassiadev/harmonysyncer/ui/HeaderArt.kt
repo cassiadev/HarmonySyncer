@@ -68,7 +68,7 @@ fun PairRibbon(modifier: Modifier = Modifier) {
     val a = MaterialTheme.colorScheme.primary
     val b = MaterialTheme.colorScheme.secondary
     Row(
-        // Design .start-page .duet-mark: 64dp tall with 56dp tiles.
+        // The design asset's start-screen mark: 64dp tall with 56dp tiles.
         modifier = modifier.height(64.dp).clearAndSetSemantics {},
         verticalAlignment = Alignment.CenterVertically,
     ) {

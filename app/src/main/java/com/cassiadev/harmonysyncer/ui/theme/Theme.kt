@@ -12,14 +12,17 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 
-// Tint fractions match the color-mix() ratios in design/css/app.css.
+// Tint fractions match the color mixes in the design asset.
 const val TINT_SOFT = 0.07f
 const val TINT_TILE = 0.11f
 const val TINT_BORDER = 0.16f
 const val DANGER_SOFT = 0.06f
 const val DANGER_BORDER = 0.18f
 
-/** Mixes [fraction] of this color into [base], like CSS `color-mix(this fraction, base)`. */
+/**
+ * Mixes [fraction] of this color into [base] in Oklab (Compose [lerp]), like CSS `color-mix(in oklab, ...)`.
+ * Oklab has no hue angle, so mixing into white keeps the track's hue instead of drifting toward cream.
+ */
 fun Color.tintOver(base: Color, fraction: Float): Color = lerp(base, this, fraction)
 
 /** Brand colors with no Material 3 role. */

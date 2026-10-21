@@ -128,7 +128,7 @@ fun AudioPreviewScreen(
             Text(
                 stringResource(if (bothSelected) R.string.ready_title else R.string.start_title),
                 style = MaterialTheme.typography.headlineSmall,
-                // Design .ready-page h1 is smaller than the start headline.
+                // The design asset's ready-screen headline is smaller than the start headline.
                 fontSize = if (bothSelected) 29.sp else TextUnit.Unspecified,
                 lineHeight = if (bothSelected) 33.sp else TextUnit.Unspecified,
                 letterSpacing = if (bothSelected) (-1.2).sp else TextUnit.Unspecified,
@@ -208,7 +208,7 @@ fun AudioPreviewScreen(
 
         val selectedCount = listOfNotNull(state.trackA, state.trackB).size
         StatusLine(
-            // Design .pair-note: a check in Audio B's color once a file is added.
+            // As in the design asset: a check in Audio B's color once a file is added.
             showCheck = !bothSelected && selectedCount > 0 && phase == PreviewPhase.Idle,
             text = when (phase) {
                 is PreviewPhase.Loading -> stringResource(

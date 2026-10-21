@@ -118,7 +118,7 @@ fun TimingSheet(settings: MixSettings, onSettingsChange: (MixSettings) -> Unit, 
             )
             val offsetLabel = stringResource(R.string.offset_b)
             val offsetValue = offsetValue(settings.offsetMs)
-            // Design .timing-output: the value large, centered and in Audio B's color.
+            // As in the design asset: the value large, centered and in Audio B's color.
             Text(
                 offsetValue,
                 fontSize = 24.sp,

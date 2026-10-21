@@ -63,7 +63,7 @@ fun TrackCard(
     val colors = MaterialTheme.colorScheme
     val shape = MaterialTheme.shapes.medium
     val isA = slot == TrackSlot.A
-    // A failed slot takes the danger color for its whole card, as design .track-card.error does.
+    // A failed slot takes the danger color for its whole card, as in the design asset.
     val track = if (error != null) colors.error else trackColor(slot)
     val trackText = if (error != null) colors.error else trackTextColor(slot)
 
@@ -75,7 +75,7 @@ fun TrackCard(
             .background(track.tintOver(colors.surface, if (error != null) DANGER_SOFT else TINT_SOFT))
             .border(1.dp, track.tintOver(colors.surface, TINT_BORDER), shape)
             .then(
-                // Design .ready-page .track-card is the compact summary card.
+                // The design asset's ready screen uses this compact summary card.
                 if (compact) Modifier.padding(14.dp) else Modifier.padding(start = 17.dp, top = 17.dp, end = 17.dp, bottom = 15.dp),
             ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
