@@ -6,6 +6,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -67,7 +68,8 @@ fun PairRibbon(modifier: Modifier = Modifier) {
     val a = MaterialTheme.colorScheme.primary
     val b = MaterialTheme.colorScheme.secondary
     Row(
-        modifier = modifier.clearAndSetSemantics {},
+        // Design .start-page .duet-mark: 64dp tall with 56dp tiles.
+        modifier = modifier.height(64.dp).clearAndSetSemantics {},
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AudioTile(a, tilt = -9f)
@@ -90,9 +92,9 @@ fun PairRibbon(modifier: Modifier = Modifier) {
 private fun AudioTile(track: Color, tilt: Float) {
     Box(
         modifier = Modifier
-            .size(66.dp)
+            .size(56.dp)
             .rotate(tilt)
-            .clip(RoundedCornerShape(23.dp))
+            .clip(RoundedCornerShape(19.dp))
             .background(track.tintOver(MaterialTheme.colorScheme.surface, TINT_SOFT)),
         contentAlignment = Alignment.Center,
     ) {

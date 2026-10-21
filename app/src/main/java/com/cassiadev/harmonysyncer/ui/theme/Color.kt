@@ -15,8 +15,8 @@ val LightDanger = Color(0xFFAC2724)
 val LightSuccess = Color(0xFF006B39)
 val LightOnAccent = Color(0xFFFFFFFF)
 
-// As text, the design accent reaches only 4.34:1 on the Audio A card tint and 4.49:1 on the
-// background; Audio A text uses this one. Buttons, sliders and icons keep LightAccent.
+// As text on the Audio A card tint the design accent reaches only 4.34:1, so text there uses this
+// one. Everywhere else (white page 4.77:1, buttons, sliders, icons) keeps LightAccent.
 val LightAccentOnTint = Color(0xFF0267DC)
 
 // Dark keeps each token's hue and only moves its lightness; it is used only in system dark mode.

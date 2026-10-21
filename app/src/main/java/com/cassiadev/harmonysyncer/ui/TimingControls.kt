@@ -17,7 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -29,12 +29,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cassiadev.harmonysyncer.R
@@ -60,6 +62,12 @@ fun TimingRow(offsetMs: Int, enabled: Boolean, onClick: () -> Unit, modifier: Mo
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        Icon(
+            painterResource(R.drawable.ic_sliders),
+            contentDescription = null,
+            tint = colors.onSurfaceVariant,
+            modifier = Modifier.size(21.dp),
+        )
         Column(modifier = Modifier.weight(1f)) {
             Text(stringResource(R.string.timing_title), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             Text(
@@ -110,7 +118,15 @@ fun TimingSheet(settings: MixSettings, onSettingsChange: (MixSettings) -> Unit, 
             )
             val offsetLabel = stringResource(R.string.offset_b)
             val offsetValue = offsetValue(settings.offsetMs)
-            ControlLabel(offsetLabel, offsetValue)
+            // Design .timing-output: the value large, centered and in Audio B's color.
+            Text(
+                offsetValue,
+                fontSize = 24.sp,
+                fontFamily = FontFamily.Monospace,
+                color = colors.secondary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().clearAndSetSemantics {},
+            )
             TrackSlider(
                 slot = TrackSlot.B,
                 value = settings.offsetMs.toFloat(),
@@ -124,14 +140,22 @@ fun TimingSheet(settings: MixSettings, onSettingsChange: (MixSettings) -> Unit, 
                 },
             )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(stringResource(R.string.offset_earlier), style = MaterialTheme.typography.bodySmall)
-                Text(stringResource(R.string.offset_later), style = MaterialTheme.typography.bodySmall)
+                Text(
+                    stringResource(R.string.offset_earlier),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
+                Text(
+                    stringResource(R.string.offset_later),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
             }
-            OutlinedButton(
+            TextButton(
                 onClick = { onSettingsChange(settings.copy(offsetMs = 0)) },
                 enabled = settings.offsetMs != 0,
                 modifier = Modifier.heightIn(min = 48.dp),
-            ) { Text(stringResource(R.string.reset_offset)) }
+            ) { Text(stringResource(R.string.reset_offset), fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
             Text(
                 stringResource(R.string.mix_hint),
                 style = MaterialTheme.typography.bodySmall,

@@ -58,6 +58,7 @@ fun TrackCard(
     enabled: Boolean,
     onSelect: () -> Unit,
     modifier: Modifier = Modifier,
+    compact: Boolean = false,
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = MaterialTheme.shapes.medium
@@ -73,7 +74,10 @@ fun TrackCard(
             .clip(shape)
             .background(track.tintOver(colors.surface, if (error != null) DANGER_SOFT else TINT_SOFT))
             .border(1.dp, track.tintOver(colors.surface, TINT_BORDER), shape)
-            .padding(start = 17.dp, top = 17.dp, end = 17.dp, bottom = 15.dp),
+            .then(
+                // Design .ready-page .track-card is the compact summary card.
+                if (compact) Modifier.padding(14.dp) else Modifier.padding(start = 17.dp, top = 17.dp, end = 17.dp, bottom = 15.dp),
+            ),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(
@@ -109,12 +113,12 @@ fun TrackCard(
                 } else {
                     Text(
                         stringResource(if (isA) R.string.track_a else R.string.track_b),
-                        fontSize = 14.sp,
+                        fontSize = if (compact) 12.sp else 14.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         clip.name,
-                        fontSize = 13.sp,
+                        fontSize = if (compact) 12.sp else 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -188,7 +192,7 @@ fun TrackCard(
 internal fun trackColor(slot: TrackSlot) =
     if (slot == TrackSlot.A) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
 
-/** Track-colored text; Audio A's accent is below 4.5:1 as text on light backgrounds. */
+/** Track-colored text on a card tint; Audio A's accent is only 4.34:1 on its own tint. */
 @Composable
 internal fun trackTextColor(slot: TrackSlot) =
     if (slot == TrackSlot.A) LocalHarmonyExtraColors.current.accentOnTint else MaterialTheme.colorScheme.secondary

@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import com.cassiadev.harmonysyncer.R
 import com.cassiadev.harmonysyncer.audio.AUDIO_MAX_DURATION_SECONDS
@@ -123,10 +124,13 @@ fun AudioPreviewScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         AppHeader()
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(if (bothSelected) 6.dp else 8.dp)) {
             Text(
                 stringResource(if (bothSelected) R.string.ready_title else R.string.start_title),
                 style = MaterialTheme.typography.headlineSmall,
+                // Design .ready-page h1 is smaller than the start headline.
+                fontSize = if (bothSelected) 29.sp else TextUnit.Unspecified,
+                letterSpacing = if (bothSelected) (-1.2).sp else TextUnit.Unspecified,
                 modifier = Modifier.semantics { heading() },
             )
             if (!bothSelected) {
@@ -140,15 +144,19 @@ fun AudioPreviewScreen(
         }
         if (!bothSelected) PairRibbon(modifier = Modifier.align(Alignment.CenterHorizontally))
 
-        for (slot in TrackSlot.entries) {
-            TrackCard(
-                slot = slot,
-                clip = if (slot == TrackSlot.A) state.trackA else state.trackB,
-                loading = (phase is PreviewPhase.Loading && phase.slot == slot) || phase == PreviewPhase.LoadingSample,
-                error = state.error.takeIf { state.failedSlot == slot },
-                enabled = state.canEdit,
-                onSelect = if (slot == TrackSlot.A) onSelectA else onSelectB,
-            )
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            for (slot in TrackSlot.entries) {
+                TrackCard(
+                    slot = slot,
+                    clip = if (slot == TrackSlot.A) state.trackA else state.trackB,
+                    loading = (phase is PreviewPhase.Loading && phase.slot == slot) ||
+                        phase == PreviewPhase.LoadingSample,
+                    error = state.error.takeIf { state.failedSlot == slot },
+                    enabled = state.canEdit,
+                    onSelect = if (slot == TrackSlot.A) onSelectA else onSelectB,
+                    compact = bothSelected,
+                )
+            }
         }
         if (state.trackA?.isSample == true || state.trackB?.isSample == true) SampleCredit()
         // A failed load keeps the previous file of that slot and the other slot's file.
@@ -169,7 +177,7 @@ fun AudioPreviewScreen(
                 letterSpacing = (-0.3).sp,
                 modifier = Modifier.semantics { heading() },
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                 VolumeControl(
                     slot = TrackSlot.A,
                     value = state.settings.volumeA,
@@ -196,8 +204,11 @@ fun AudioPreviewScreen(
             }
         }
 
-        Text(
-            when (phase) {
+        val selectedCount = listOfNotNull(state.trackA, state.trackB).size
+        StatusLine(
+            // Design .pair-note: a check in Audio B's color once a file is added.
+            showCheck = !bothSelected && selectedCount > 0 && phase == PreviewPhase.Idle,
+            text = when (phase) {
                 is PreviewPhase.Loading -> stringResource(
                     if (phase.slot == TrackSlot.A) R.string.status_loading_a else R.string.status_loading_b,
                 )
@@ -207,13 +218,9 @@ fun AudioPreviewScreen(
                 PreviewPhase.Idle -> if (bothSelected) {
                     stringResource(R.string.status_ready)
                 } else {
-                    stringResource(R.string.selected_count, listOfNotNull(state.trackA, state.trackB).size)
+                    stringResource(R.string.selected_count, selectedCount)
                 }
             },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
         )
         if (state.error != null && state.failedSlot == null) ErrorBox(state.error)
         MainButton(state = state, bothSelected = bothSelected, onPlay = onPlay, onStop = onStop)
@@ -221,7 +228,7 @@ fun AudioPreviewScreen(
             TextButton(
                 onClick = onLoadSample,
                 enabled = state.canEdit,
-                colors = ButtonDefaults.textButtonColors(contentColor = trackTextColor(TrackSlot.A)),
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
                 modifier = Modifier
                     .align(Alignment.CenterHorizontally)
                     .heightIn(min = 48.dp)
@@ -355,7 +362,7 @@ private fun VolumeControl(
                 stringResource(if (isA) R.string.track_a else R.string.track_b),
                 fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold,
-                color = trackTextColor(slot),
+                color = trackColor(slot),
             )
             Text(
                 percentage,
@@ -437,18 +444,36 @@ internal fun TrackSlider(
 }
 
 @Composable
-internal fun ControlLabel(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label)
-        Text(value, style = MaterialTheme.typography.labelLarge)
-    }
-}
-
-@Composable
 private fun Notice(icon: Int, text: String, iconColor: Color) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         Icon(painterResource(icon), contentDescription = null, tint = iconColor, modifier = Modifier.size(14.dp))
         Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun StatusLine(showCheck: Boolean, text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (showCheck) {
+            Icon(
+                painterResource(R.drawable.ic_check),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.size(14.dp),
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+        }
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
     }
 }
 
