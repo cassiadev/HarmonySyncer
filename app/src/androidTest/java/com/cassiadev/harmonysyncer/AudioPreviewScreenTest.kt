@@ -2,10 +2,13 @@ package com.cassiadev.harmonysyncer
 
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -18,8 +21,11 @@ import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isHeading
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -235,6 +241,72 @@ class AudioPreviewScreenTest {
         compose.onNodeWithTag(AudioPreviewTags.SAMPLE).assertIsNotEnabled()
     }
 
+    @Test
+    fun timingSheetContentScrolls() {
+        show(readyState())
+        compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
+        // Landscape with a large font is taller than the screen; the reset and hint must stay reachable.
+        compose.onNode(hasScrollAction() and hasAnyDescendant(hasText("0으로"))).assertExists()
+    }
+
+    @Test
+    fun timingSheetClosesWhenEditingLocksOrFilesGo() {
+        val state = show(readyState())
+        compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
+        compose.onNodeWithTag(AudioPreviewTags.OFFSET).assertExists()
+
+        state.value = readyState().copy(phase = PreviewPhase.Playing)
+        compose.onNodeWithTag(AudioPreviewTags.OFFSET).assertDoesNotExist()
+        state.value = readyState()
+        compose.onNodeWithTag(AudioPreviewTags.OFFSET).assertDoesNotExist()
+
+        compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
+        // Process death restores the flag while the controller starts with no files.
+        state.value = PreviewUiState()
+        compose.onNodeWithTag(AudioPreviewTags.OFFSET).assertDoesNotExist()
+    }
+
+    @Test
+    fun creditSurvivesMissingBrowserAndSaysWhatItOpens() {
+        var attempts = 0
+        compose.setContent {
+            val failing = object : UriHandler {
+                override fun openUri(uri: String) {
+                    attempts++
+                    throw IllegalArgumentException("No activity can open $uri")
+                }
+            }
+            CompositionLocalProvider(LocalUriHandler provides failing) {
+                HarmonySyncerTheme {
+                    AudioPreviewScreen(
+                        readyState().copy(trackA = ClipInfo("Locus iste · 소프라노", 48_000, 384_000, isSample = true)),
+                        onSelectA = {}, onSelectB = {}, onSettingsChange = {}, onPlay = {}, onStop = {},
+                        onLoadSample = {},
+                    )
+                }
+            }
+        }
+        compose.onNodeWithTag(AudioPreviewTags.CREDIT).assert(clickLabel("데이터셋 페이지 열기")).performClick()
+        compose.runOnIdle { assertEquals(1, attempts) }
+        compose.onNodeWithTag(AudioPreviewTags.CREDIT).assertExists()
+    }
+
+    @Test
+    fun titlesAreHeadingsAndRenderingButtonSaysItStops() {
+        val state = show(PreviewUiState())
+        compose.onNodeWithText("두 음성을 함께 들어보세요").assert(isHeading())
+
+        state.value = readyState()
+        compose.onNodeWithText("함께 들을 준비가 됐습니다").assert(isHeading())
+        compose.onNodeWithText("음량").assert(isHeading())
+        compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
+        compose.onNode(hasText("타이밍 맞추기") and isHeading()).assertExists()
+        Espresso.pressBack()
+
+        state.value = readyState().copy(phase = PreviewPhase.Rendering)
+        compose.onNodeWithTag(AudioPreviewTags.STOP).assert(clickLabel("정지"))
+    }
+
     /** `setContent` may run once per test, so tests change the returned state instead. */
     private fun show(
         initial: PreviewUiState,
@@ -258,6 +330,10 @@ class AudioPreviewScreenTest {
         trackA = ClipInfo("A.wav", 48_000, 48_000),
         trackB = ClipInfo("B.wav", 48_000, 48_000),
     )
+
+    private fun clickLabel(label: String) = SemanticsMatcher("onClick label is $label") {
+        it.config.getOrElseNullable(SemanticsActions.OnClick) { null }?.label == label
+    }
 
     private fun stateDescription(value: String) =
         SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, value)

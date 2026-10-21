@@ -1,5 +1,6 @@
 package com.cassiadev.harmonysyncer.ui
 
+import android.content.ActivityNotFoundException
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
@@ -31,6 +32,7 @@ import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -45,6 +47,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -106,6 +110,10 @@ fun AudioPreviewScreen(
 ) {
     val bothSelected = state.trackA != null && state.trackB != null
     var timingOpen by rememberSaveable { mutableStateOf(false) }
+    // A restored flag must not reopen the sheet over the start layout or after editing unlocks.
+    LaunchedEffect(bothSelected, state.canEdit) {
+        if (!bothSelected || !state.canEdit) timingOpen = false
+    }
     val phase = state.phase
 
     Column(
@@ -119,6 +127,7 @@ fun AudioPreviewScreen(
             Text(
                 stringResource(if (bothSelected) R.string.ready_title else R.string.start_title),
                 style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.semantics { heading() },
             )
             if (!bothSelected) {
                 Text(
@@ -158,6 +167,7 @@ fun AudioPreviewScreen(
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = (-0.3).sp,
+                modifier = Modifier.semantics { heading() },
             )
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 VolumeControl(
@@ -236,7 +246,7 @@ fun AudioPreviewScreen(
     }
 
     // Editing locks while loading or playing, so the sheet closes with it and returns afterwards.
-    if (timingOpen && state.canEdit) {
+    if (timingOpen && bothSelected && state.canEdit) {
         TimingSheet(settings = state.settings, onSettingsChange = onSettingsChange, onDismiss = { timingOpen = false })
     }
 }
@@ -245,12 +255,20 @@ fun AudioPreviewScreen(
 @Composable
 private fun SampleCredit() {
     val uriHandler = LocalUriHandler.current
+    val openLabel = stringResource(R.string.open_sample_source)
     Box(
         contentAlignment = Alignment.CenterStart,
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .clickable(role = Role.Button) { uriHandler.openUri(SAMPLE_SOURCE_URL) }
+            .clickable(role = Role.Button, onClickLabel = openLabel) {
+                // No browser (for example a restricted profile) must not crash the app.
+                try {
+                    uriHandler.openUri(SAMPLE_SOURCE_URL)
+                } catch (_: IllegalArgumentException) {
+                } catch (_: ActivityNotFoundException) {
+                }
+            }
             .testTag(AudioPreviewTags.CREDIT),
     ) {
         Text(
@@ -273,11 +291,15 @@ private fun MainButton(state: PreviewUiState, bothSelected: Boolean, onPlay: () 
     val sizing = Modifier.fillMaxWidth().heightIn(min = 56.dp)
     val shape = RoundedCornerShape(18.dp)
     if (state.isPlaying) {
+        val stopLabel = stringResource(R.string.stop_preview)
         Button(
             onClick = onStop,
             shape = shape,
             colors = buttonColors,
-            modifier = sizing.testTag(AudioPreviewTags.STOP),
+            // While mixing the label reads "합치는 중…"; say that activating it stops.
+            modifier = sizing.testTag(AudioPreviewTags.STOP).semantics {
+                onClick(label = stopLabel) { onStop(); true }
+            },
         ) {
             if (state.phase == PreviewPhase.Rendering) {
                 CircularProgressIndicator(
