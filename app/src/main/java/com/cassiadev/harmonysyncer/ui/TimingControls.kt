@@ -69,7 +69,7 @@ fun TimingRow(offsetMs: Int, enabled: Boolean, onClick: () -> Unit, modifier: Mo
             modifier = Modifier.size(21.dp),
         )
         Column(modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.timing_title), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.timing_title), fontSize = 13.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
             Text(
                 stringResource(R.string.timing_hint),
                 style = MaterialTheme.typography.bodySmall,
@@ -122,6 +122,7 @@ fun TimingSheet(settings: MixSettings, onSettingsChange: (MixSettings) -> Unit, 
             Text(
                 offsetValue,
                 fontSize = 24.sp,
+                lineHeight = 30.sp,
                 fontFamily = FontFamily.Monospace,
                 color = colors.secondary,
                 textAlign = TextAlign.Center,

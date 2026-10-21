@@ -130,6 +130,7 @@ fun AudioPreviewScreen(
                 style = MaterialTheme.typography.headlineSmall,
                 // Design .ready-page h1 is smaller than the start headline.
                 fontSize = if (bothSelected) 29.sp else TextUnit.Unspecified,
+                lineHeight = if (bothSelected) 33.sp else TextUnit.Unspecified,
                 letterSpacing = if (bothSelected) (-1.2).sp else TextUnit.Unspecified,
                 modifier = Modifier.semantics { heading() },
             )
@@ -173,6 +174,7 @@ fun AudioPreviewScreen(
             Text(
                 stringResource(R.string.volume),
                 fontSize = 16.sp,
+                lineHeight = 20.sp,
                 fontWeight = FontWeight.SemiBold,
                 letterSpacing = (-0.3).sp,
                 modifier = Modifier.semantics { heading() },
@@ -361,6 +363,7 @@ private fun VolumeControl(
             Text(
                 stringResource(if (isA) R.string.track_a else R.string.track_b),
                 fontSize = 12.sp,
+                lineHeight = 16.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = trackColor(slot),
             )
@@ -387,8 +390,9 @@ private fun VolumeControl(
 }
 
 /**
- * The design's range input: a 4dp track tinted 18% with the track color, and a 16dp thumb with a
- * 3dp surface ring and a 1dp outer ring. No step ticks; the Material slider keeps its 48dp touch target.
+ * The design's range input: one light 4dp track with no filled part (the value is the number beside
+ * it), and a 16dp thumb with a 3dp surface ring and a 1dp outer ring. No step ticks; the Material
+ * slider keeps its 48dp touch target.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -403,11 +407,12 @@ internal fun TrackSlider(
 ) {
     val colors = MaterialTheme.colorScheme
     val track = if (enabled) trackColor(slot) else colors.onSurfaceVariant.copy(alpha = 0.38f)
+    val trackTint = if (enabled) trackColor(slot).tintOver(colors.surface, 0.18f) else colors.outlineVariant
     val sliderColors = SliderDefaults.colors(
-        activeTrackColor = track,
-        inactiveTrackColor = track.tintOver(colors.surface, 0.18f),
-        disabledActiveTrackColor = track,
-        disabledInactiveTrackColor = colors.outlineVariant,
+        activeTrackColor = trackTint,
+        inactiveTrackColor = trackTint,
+        disabledActiveTrackColor = trackTint,
+        disabledInactiveTrackColor = trackTint,
     )
     Slider(
         value = value,

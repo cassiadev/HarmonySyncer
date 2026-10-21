@@ -103,6 +103,7 @@ fun TrackCard(
                     Text(
                         stringResource(if (isA) R.string.add_track_a else R.string.add_track_b),
                         fontSize = 14.sp,
+                        lineHeight = 18.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
@@ -113,12 +114,15 @@ fun TrackCard(
                 } else {
                     Text(
                         stringResource(if (isA) R.string.track_a else R.string.track_b),
+                        // Explicit line heights: sizes alone keep bodyLarge's 24sp line and loosen the card.
                         fontSize = if (compact) 12.sp else 14.sp,
+                        lineHeight = if (compact) 16.sp else 18.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                     Text(
                         clip.name,
                         fontSize = if (compact) 12.sp else 13.sp,
+                        lineHeight = if (compact) 16.sp else 18.sp,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
