@@ -25,6 +25,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -53,11 +55,13 @@ fun AppHeader(modifier: Modifier = Modifier) {
                 modifier = Modifier.requiredSize(51.dp),
             )
         }
+        val spokenName = stringResource(R.string.app_name_spoken)
         Text(
             stringResource(R.string.app_name),
             fontSize = 17.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = (-0.6).sp,
+            modifier = Modifier.semantics { contentDescription = spokenName },
         )
     }
 }

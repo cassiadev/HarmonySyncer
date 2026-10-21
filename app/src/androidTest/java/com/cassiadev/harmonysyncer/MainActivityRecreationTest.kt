@@ -114,6 +114,14 @@ class MainActivityRecreationTest {
     }
 
     @Test
+    fun windowTitleIsTheSpokenAppName() {
+        // TalkBack announces the window title when the app opens; the screen shows no title bar.
+        launch().use { scenario ->
+            scenario.onActivity { assertEquals("하모니싱커", it.title.toString()) }
+        }
+    }
+
+    @Test
     fun loadingContinuesAcrossRecreation() {
         val loading = CompletableDeferred<LoadedAudioFile>()
         val loads = AtomicInteger()

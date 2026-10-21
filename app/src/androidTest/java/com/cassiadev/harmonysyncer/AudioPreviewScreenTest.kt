@@ -22,6 +22,7 @@ import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -183,6 +184,13 @@ class AudioPreviewScreenTest {
         state.value = readyState()
 
         compose.onNodeWithText("0으로").assertIsNotEnabled()
+    }
+
+    @Test
+    fun appNameIsReadAsHarmonySyncerInKorean() {
+        show(PreviewUiState())
+        // TTS otherwise guesses "Syncer" as "신서".
+        compose.onNodeWithText("HarmonySyncer").assert(hasContentDescription("하모니싱커"))
     }
 
     @Test
