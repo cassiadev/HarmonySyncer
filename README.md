@@ -30,6 +30,12 @@ Pitch changes, playback drift correction, and audio export are outside the curre
    names the current step, and a lock notice appears while mixing or playing. Changes
    are not applied in real time.
 
+To hear the app without your own files, tap **Try the sample** (샘플로 들어보기) on the start
+screen. It loads an eight-second soprano (A) and alto (B) excerpt of Bruckner's *Locus iste*
+from the Dagstuhl ChoirSet, cut at the same measure, and you can adjust it like any pair.
+The recordings are licensed under CC BY 4.0; the app shows the credit and dataset link while
+a sample track is loaded. See [the bundled vocals notes](app/src/main/assets/vocals/README.md).
+
 Each volume is multiplied by `0.5` before mixing, so a 100% setting gives that track a
 linear gain of `0.5`. This preserves mixing headroom, with PCM16 saturation protection.
 Setting B to 0% mutes B while leaving A's gain unchanged.
@@ -120,6 +126,8 @@ Use two short compatible files with clear clicks or onsets to check the
 - Stop and replay repeatedly, including shortly after starting; confirm restarts without overlap.
 - Check controls lock during loading/playback, the status line and lock notice explain why,
   and controls unlock on completion or stop.
+- Tap Try the sample, play it, then change volumes and timing and play again; confirm the
+  credit line opens the dataset page and disappears once both tracks are replaced.
 - Turn on system dark mode and the largest font size; confirm nothing is clipped and text stays
   readable.
 - Background the app and leave the screen; confirm playback stops.

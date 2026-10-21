@@ -139,6 +139,7 @@ class AudioPreviewScreenTest {
                     onSettingsChange = { state = state.copy(settings = it) },
                     onPlay = { playedSettings = state.settings; state = state.copy(phase = PreviewPhase.Playing) },
                     onStop = { stopped = true; state = state.copy(phase = PreviewPhase.Idle) },
+                    onLoadSample = {},
                 )
             }
         }
@@ -208,10 +209,37 @@ class AudioPreviewScreenTest {
         compose.onNodeWithTag(AudioPreviewTags.PLAY).assertIsEnabled()
     }
 
+    @Test
+    fun sampleLinkOnlyOnStartLayoutAndCreditOnlyForSamples() {
+        var sampleRequests = 0
+        val state = show(PreviewUiState(), onLoadSample = { sampleRequests++ })
+        compose.onNodeWithTag(AudioPreviewTags.SAMPLE).performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(1, sampleRequests) }
+        compose.onNodeWithTag(AudioPreviewTags.CREDIT).assertDoesNotExist()
+
+        state.value = readyState().copy(
+            trackA = ClipInfo("Locus iste · 소프라노", 48_000, 384_000, isSample = true),
+        )
+
+        compose.onNodeWithTag(AudioPreviewTags.SAMPLE).assertDoesNotExist()
+        compose.onNodeWithTag(AudioPreviewTags.CREDIT)
+            .assertTextEquals("샘플: 브루크너 「Locus iste」 · Dagstuhl ChoirSet · CC BY 4.0")
+            .assertHasClickAction()
+    }
+
+    @Test
+    fun sampleLoadingMarksBothCards() {
+        show(PreviewUiState(phase = PreviewPhase.LoadingSample))
+        compose.onNodeWithText("샘플을 불러오는 중입니다…").assertExists()
+        compose.onAllNodesWithText("읽는 중…").assertCountEquals(2)
+        compose.onNodeWithTag(AudioPreviewTags.SAMPLE).assertIsNotEnabled()
+    }
+
     /** `setContent` may run once per test, so tests change the returned state instead. */
     private fun show(
         initial: PreviewUiState,
         onSettingsChange: (MixSettings) -> Unit = {},
+        onLoadSample: () -> Unit = {},
     ): MutableState<PreviewUiState> {
         val state = mutableStateOf(initial)
         compose.setContent {
@@ -219,6 +247,7 @@ class AudioPreviewScreenTest {
                 AudioPreviewScreen(
                     state.value,
                     onSelectA = {}, onSelectB = {}, onSettingsChange = onSettingsChange, onPlay = {}, onStop = {},
+                    onLoadSample = onLoadSample,
                 )
             }
         }

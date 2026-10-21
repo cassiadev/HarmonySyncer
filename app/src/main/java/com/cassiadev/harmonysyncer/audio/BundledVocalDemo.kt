@@ -13,6 +13,8 @@ import java.nio.ByteOrder
 object BundledVocalDemo {
     const val SAMPLE_RATE = 48_000
     const val FRAME_COUNT = SAMPLE_RATE * 8
+    const val TRACK_A_NAME = "Locus iste · 소프라노"
+    const val TRACK_B_NAME = "Locus iste · 알토"
 
     private const val TRACK_A_ASSET = "vocals/locus_iste_soprano.pcm"
     private const val TRACK_B_ASSET = "vocals/locus_iste_alto.pcm"
@@ -33,16 +35,15 @@ object BundledVocalDemo {
         sampleRate = SAMPLE_RATE,
     )
 
-    /** Returns an eight-second mono PCM16 buffer for a future 48 kHz player. */
+    /**
+     * Loads the aligned pair as the A/B clips the preview controller plays, so the user can
+     * change volumes and timing like for their own files.
+     */
     @WorkerThread
-    fun loadMixed(openAsset: (String) -> InputStream): ShortArray {
+    fun loadSamplePair(openAsset: (String) -> InputStream): Pair<LoadedAudioFile, LoadedAudioFile> {
         val aligned = loadAligned(openAsset)
-        return mixPcm16(
-            trackA = aligned.trackA,
-            trackB = aligned.trackB,
-            gainA = 0.5f,
-            gainB = 0.5f,
-        )
+        return LoadedAudioFile(TRACK_A_NAME, PcmClip(aligned.trackA, SAMPLE_RATE)) to
+            LoadedAudioFile(TRACK_B_NAME, PcmClip(aligned.trackB, SAMPLE_RATE))
     }
 
     private fun readTrack(path: String, openAsset: (String) -> InputStream): ShortArray {

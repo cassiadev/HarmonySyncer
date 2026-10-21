@@ -1,6 +1,7 @@
 package com.cassiadev.harmonysyncer.audio
 
 import android.content.Context
+import android.content.res.AssetManager
 import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,7 +21,8 @@ import kotlinx.coroutines.withContext
 
 enum class TrackSlot { A, B }
 
-data class ClipInfo(val name: String, val sampleRate: Int, val frameCount: Int) {
+/** [isSample] marks the bundled harmony sample, whose recordings need a CC BY credit on screen. */
+data class ClipInfo(val name: String, val sampleRate: Int, val frameCount: Int, val isSample: Boolean = false) {
     val durationSeconds: Float get() = frameCount / sampleRate.toFloat()
 }
 
@@ -28,6 +30,8 @@ data class ClipInfo(val name: String, val sampleRate: Int, val frameCount: Int) 
 sealed interface PreviewPhase {
     data object Idle : PreviewPhase
     data class Loading(val slot: TrackSlot) : PreviewPhase
+    /** Loading the bundled harmony sample into both slots. */
+    data object LoadingSample : PreviewPhase
     data object Rendering : PreviewPhase
     data object Playing : PreviewPhase
 }
@@ -41,7 +45,7 @@ data class PreviewUiState(
     /** Set only while [error] reports a failed file load into this slot. */
     val failedSlot: TrackSlot? = null,
 ) {
-    val isLoading: Boolean get() = phase is PreviewPhase.Loading
+    val isLoading: Boolean get() = phase is PreviewPhase.Loading || phase == PreviewPhase.LoadingSample
     val isPlaying: Boolean get() = phase == PreviewPhase.Rendering || phase == PreviewPhase.Playing
     val canEdit: Boolean get() = phase == PreviewPhase.Idle
     val canPlay: Boolean
@@ -58,6 +62,9 @@ class AudioPreviewController internal constructor(
     private val playPreview: suspend (PcmClip) -> Unit,
     private val stopPlayback: () -> Unit,
     private val closePlayback: () -> Unit,
+    private val loadSamplePair: suspend () -> Pair<LoadedAudioFile, LoadedAudioFile> = {
+        error("No bundled sample in this controller")
+    },
 ) {
     constructor(context: Context) : this(createDependencies(context))
 
@@ -73,6 +80,7 @@ class AudioPreviewController internal constructor(
         playPreview = dependencies.player::play,
         stopPlayback = dependencies.player::stop,
         closePlayback = dependencies.player::close,
+        loadSamplePair = { BundledVocalDemo.loadSamplePair(dependencies.assets::open) },
     )
 
     var state by mutableStateOf(PreviewUiState())
@@ -88,23 +96,47 @@ class AudioPreviewController internal constructor(
     fun selectFile(slot: TrackSlot, uri: Uri) = selectFile(slot) { loadFile(uri) }
 
     /** Also permits loaders that do not use Android URIs, including JVM lifecycle tests. */
-    internal fun selectFile(slot: TrackSlot, load: suspend () -> LoadedAudioFile) {
+    internal fun selectFile(slot: TrackSlot, load: suspend () -> LoadedAudioFile) =
+        load(PreviewPhase.Loading(slot), failedSlot = slot) { listOf(slot to load()) }
+
+    /** Fills A with the bundled soprano and B with the alto, like choosing both files at once. */
+    fun loadSample() = load(PreviewPhase.LoadingSample, failedSlot = null) {
+        val (a, b) = loadSamplePair()
+        listOf(TrackSlot.A to a, TrackSlot.B to b)
+    }
+
+    /**
+     * Runs one load at a time. Slots change only after every file loaded; a failure keeps the
+     * previous clips and reports [failedSlot] with the error.
+     */
+    private fun load(
+        phase: PreviewPhase,
+        failedSlot: TrackSlot?,
+        block: suspend () -> List<Pair<TrackSlot, LoadedAudioFile>>,
+    ) {
         if (closed || !state.canEdit) return
-        state = state.copy(phase = PreviewPhase.Loading(slot), error = null, failedSlot = null)
+        state = state.copy(phase = phase, error = null, failedSlot = null)
         loadJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                val loaded = withContext(ioDispatcher) { load() }
+                val loaded = withContext(ioDispatcher) { block() }
                 ensureActive()
                 if (closed) return@launch
-                val info = ClipInfo(loaded.name, loaded.clip.sampleRate, loaded.clip.samples.size)
-                when (slot) {
-                    TrackSlot.A -> {
-                        clipA = loaded.clip
-                        state = state.copy(trackA = info)
-                    }
-                    TrackSlot.B -> {
-                        clipB = loaded.clip
-                        state = state.copy(trackB = info)
+                for ((slot, file) in loaded) {
+                    val info = ClipInfo(
+                        file.name,
+                        file.clip.sampleRate,
+                        file.clip.samples.size,
+                        isSample = phase == PreviewPhase.LoadingSample,
+                    )
+                    when (slot) {
+                        TrackSlot.A -> {
+                            clipA = file.clip
+                            state = state.copy(trackA = info)
+                        }
+                        TrackSlot.B -> {
+                            clipB = file.clip
+                            state = state.copy(trackB = info)
+                        }
                     }
                 }
                 state = state.copy(
@@ -118,7 +150,7 @@ class AudioPreviewController internal constructor(
                 if (!closed) {
                     state = state.copy(
                         error = failure.message ?: "파일을 읽을 수 없습니다. 다시 선택해 주세요.",
-                        failedSlot = slot,
+                        failedSlot = failedSlot,
                     )
                 }
             } finally {
@@ -206,6 +238,7 @@ class AudioPreviewController internal constructor(
         val scope: CoroutineScope,
         val loader: AudioFileLoader,
         val player: PcmPreviewPlayer,
+        val assets: AssetManager,
     )
 
     private companion object {
@@ -213,6 +246,7 @@ class AudioPreviewController internal constructor(
             scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
             loader = AudioFileLoader(context.applicationContext.contentResolver),
             player = PcmPreviewPlayer(),
+            assets = context.applicationContext.assets,
         )
     }
 }

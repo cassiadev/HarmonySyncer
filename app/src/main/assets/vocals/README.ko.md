@@ -31,26 +31,28 @@
 
 `BundledVocalDemo.loadAligned()`는 두 파일을 읽어
 `alignFromOnsets(trackA, 0, trackB, 0, 48000)`에 전달한다.
-`loadMixed()`는 그 결과의 두 배열을 `mixPcm16()`에 전달하며
-`gainA = 0.5f`, `gainB = 0.5f`를 명시한다.
+`loadSamplePair()`는 맞춘 두 배열을 `Locus iste · 소프라노`(A), `Locus iste · 알토`(B)라는
+이름의 48 kHz 클립으로 감싼다. 시작 화면의 **샘플로 들어보기**가 이 두 클립을 A·B 칸에 넣고,
+재생은 직접 고른 파일과 똑같이 사용자의 음량·타이밍으로 `preparePreview()`가 섞는다.
 기준점을 이미 맞춘 음원이므로 보고되는 원래 상대 오프셋은 0이다.
 이 값은 실제 출력의 보정 성능을 측정한 결과가 아니다.
 
 로딩과 혼합은 작업 스레드에서 호출한다. 코루틴에서 호출하는 예시는 다음과 같다.
 
 ```kotlin
-val pcm = withContext(Dispatchers.IO) {
-    BundledVocalDemo.loadMixed(context.assets::open)
+val (a, b) = withContext(Dispatchers.IO) {
+    BundledVocalDemo.loadSamplePair(context.assets::open)
 }
-// pcm: 384,000 mono PCM16 frames; playback sample rate: BundledVocalDemo.SAMPLE_RATE
+val preview = preparePreview(a.clip, b.clip, MixSettings())
+// preview: 384,000 mono PCM16 frames at BundledVocalDemo.SAMPLE_RATE
 ```
 
 스트림은 로더에서 닫는다. 파일 길이가 기대값과 다르면 준비를 실패시키고,
 부호와 바이트 순서를 명시해서 읽는다. 앱 실행 중에는 네트워크가 필요하지 않다.
-현재 화면에는 재생기를 연결하지 않았다.
 
 `BundledVocalDemoTest`는 APK에 넣는 것과 동일한 원본 asset을 테스트 리소스로
-읽어 전체 8초 혼합 결과를 독립적으로 계산한 SHA-256과 비교한다.
+읽어, 기본 설정(트랙별 계수 0.5)의 `preparePreview()`가 만든 전체 8초 혼합 결과를
+독립적으로 계산한 SHA-256과 비교한다.
 
 ## 출처와 이용 조건
 

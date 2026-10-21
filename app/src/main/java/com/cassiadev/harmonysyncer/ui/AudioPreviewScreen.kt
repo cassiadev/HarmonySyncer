@@ -1,6 +1,7 @@
 package com.cassiadev.harmonysyncer.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,6 +29,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,10 +38,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -47,6 +51,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -77,7 +82,12 @@ object AudioPreviewTags {
     const val OFFSET = "offset"
     const val PLAY = "play"
     const val STOP = "stop"
+    const val SAMPLE = "sample"
+    const val CREDIT = "credit"
 }
+
+// Dataset record with the CC BY 4.0 license for the bundled Locus iste excerpt.
+private const val SAMPLE_SOURCE_URL = "https://zenodo.org/records/4607766"
 
 /**
  * Start layout until both files are chosen, then the ready layout with volumes, timing and playback.
@@ -91,6 +101,7 @@ fun AudioPreviewScreen(
     onSettingsChange: (MixSettings) -> Unit,
     onPlay: () -> Unit,
     onStop: () -> Unit,
+    onLoadSample: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val bothSelected = state.trackA != null && state.trackB != null
@@ -124,12 +135,13 @@ fun AudioPreviewScreen(
             TrackCard(
                 slot = slot,
                 clip = if (slot == TrackSlot.A) state.trackA else state.trackB,
-                loading = phase is PreviewPhase.Loading && phase.slot == slot,
+                loading = (phase is PreviewPhase.Loading && phase.slot == slot) || phase == PreviewPhase.LoadingSample,
                 error = state.error.takeIf { state.failedSlot == slot },
                 enabled = state.canEdit,
                 onSelect = if (slot == TrackSlot.A) onSelectA else onSelectB,
             )
         }
+        if (state.trackA?.isSample == true || state.trackB?.isSample == true) SampleCredit()
         // A failed load keeps the previous file of that slot and the other slot's file.
         if (state.failedSlot != null && (state.trackA != null || state.trackB != null)) {
             Notice(
@@ -179,6 +191,7 @@ fun AudioPreviewScreen(
                 is PreviewPhase.Loading -> stringResource(
                     if (phase.slot == TrackSlot.A) R.string.status_loading_a else R.string.status_loading_b,
                 )
+                PreviewPhase.LoadingSample -> stringResource(R.string.status_loading_sample)
                 PreviewPhase.Rendering -> stringResource(R.string.status_rendering)
                 PreviewPhase.Playing -> stringResource(R.string.status_playing)
                 PreviewPhase.Idle -> if (bothSelected) {
@@ -194,6 +207,21 @@ fun AudioPreviewScreen(
         )
         if (state.error != null && state.failedSlot == null) ErrorBox(state.error)
         MainButton(state = state, bothSelected = bothSelected, onPlay = onPlay, onStop = onStop)
+        if (!bothSelected) {
+            TextButton(
+                onClick = onLoadSample,
+                enabled = state.canEdit,
+                colors = ButtonDefaults.textButtonColors(contentColor = trackTextColor(TrackSlot.A)),
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .heightIn(min = 48.dp)
+                    .testTag(AudioPreviewTags.SAMPLE),
+            ) {
+                Text(stringResource(R.string.try_sample), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.width(6.dp))
+                Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+        }
         Text(
             if (bothSelected) {
                 stringResource(R.string.replay_hint)
@@ -210,6 +238,27 @@ fun AudioPreviewScreen(
     // Editing locks while loading or playing, so the sheet closes with it and returns afterwards.
     if (timingOpen && state.canEdit) {
         TimingSheet(settings = state.settings, onSettingsChange = onSettingsChange, onDismiss = { timingOpen = false })
+    }
+}
+
+/** CC BY 4.0 requires credit wherever the bundled recordings are played. */
+@Composable
+private fun SampleCredit() {
+    val uriHandler = LocalUriHandler.current
+    Box(
+        contentAlignment = Alignment.CenterStart,
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .clickable(role = Role.Button) { uriHandler.openUri(SAMPLE_SOURCE_URL) }
+            .testTag(AudioPreviewTags.CREDIT),
+    ) {
+        Text(
+            stringResource(R.string.sample_credit),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textDecoration = TextDecoration.Underline,
+        )
     }
 }
 
@@ -404,7 +453,7 @@ private fun StartLayoutPreview() {
     HarmonySyncerTheme {
         AudioPreviewScreen(
             state = PreviewUiState(trackA = ClipInfo("Soprano.wav", 48_000, 384_000)),
-            onSelectA = {}, onSelectB = {}, onSettingsChange = {}, onPlay = {}, onStop = {},
+            onSelectA = {}, onSelectB = {}, onSettingsChange = {}, onPlay = {}, onStop = {}, onLoadSample = {},
         )
     }
 }
@@ -419,7 +468,7 @@ private fun ReadyLayoutPreview() {
                 trackB = ClipInfo("Alto.m4a", 44_100, 352_800),
                 settings = MixSettings(volumeA = 0.75f, volumeB = 0.9f, offsetMs = 40),
             ),
-            onSelectA = {}, onSelectB = {}, onSettingsChange = {}, onPlay = {}, onStop = {},
+            onSelectA = {}, onSelectB = {}, onSettingsChange = {}, onPlay = {}, onStop = {}, onLoadSample = {},
         )
     }
 }

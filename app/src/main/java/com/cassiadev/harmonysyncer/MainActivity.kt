@@ -39,6 +39,7 @@ class MainActivity : ComponentActivity() {
                         onSettingsChange = controller::updateSettings,
                         onPlay = controller::play,
                         onStop = controller::stop,
+                        onLoadSample = controller::loadSample,
                         modifier = Modifier.padding(innerPadding),
                     )
                 }
