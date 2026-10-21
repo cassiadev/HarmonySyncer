@@ -33,7 +33,7 @@ val LocalHarmonyExtraColors = staticCompositionLocalOf { LightExtraColors }
 
 // Every role a component reads is set, so no Material baseline (purple) color can show through.
 private fun ColorScheme.withBrand(
-    background: Color,
+    fill: Color,
     surface: Color,
     foreground: Color,
     muted: Color,
@@ -59,11 +59,11 @@ private fun ColorScheme.withBrand(
         onTertiary = onAccent,
         tertiaryContainer = voiceContainer,
         onTertiaryContainer = voice,
-        background = background,
+        background = surface,
         onBackground = foreground,
         surface = surface,
         onSurface = foreground,
-        surfaceVariant = background,
+        surfaceVariant = fill,
         onSurfaceVariant = muted,
         surfaceTint = accent,
         error = danger,
@@ -84,7 +84,7 @@ private fun ColorScheme.withBrand(
 }
 
 internal val LightColors = lightColorScheme().withBrand(
-    background = LightBackground,
+    fill = LightFill,
     surface = LightSurface,
     foreground = LightForeground,
     muted = LightMuted,
@@ -97,7 +97,7 @@ internal val LightColors = lightColorScheme().withBrand(
 )
 
 internal val DarkColors = darkColorScheme().withBrand(
-    background = DarkBackground,
+    fill = DarkFill,
     surface = DarkSurface,
     foreground = DarkForeground,
     muted = DarkMuted,

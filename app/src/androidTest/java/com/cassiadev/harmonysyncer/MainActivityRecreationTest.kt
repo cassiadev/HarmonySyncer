@@ -12,7 +12,7 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -24,6 +24,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.core.app.ActivityScenario
+import androidx.test.espresso.Espresso
 import androidx.test.espresso.intent.Intents
 import androidx.test.espresso.intent.Intents.intending
 import androidx.test.espresso.intent.matcher.IntentMatchers.hasAction
@@ -78,8 +79,10 @@ class MainActivityRecreationTest {
             selectBoth(wav.name)
             compose.onNodeWithTag(AudioPreviewTags.VOLUME_B).performScrollTo()
                 .performSemanticsAction(SemanticsActions.SetProgress) { it(0f) }
-            compose.onNodeWithTag(AudioPreviewTags.OFFSET).performScrollTo()
+            compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
+            compose.onNodeWithTag(AudioPreviewTags.OFFSET)
                 .performSemanticsAction(SemanticsActions.SetProgress) { it(100f) }
+            Espresso.pressBack()
 
             scenario.recreate()
 
@@ -87,9 +90,26 @@ class MainActivityRecreationTest {
             compose.onNodeWithTag(AudioPreviewTags.NAME_B).assertTextEquals(wav.name)
             compose.onNodeWithTag(AudioPreviewTags.VOLUME_B)
                 .assert(stateDescription(context.getString(R.string.volume_value, 0)))
-            compose.onNodeWithTag(AudioPreviewTags.OFFSET)
-                .assert(stateDescription(context.getString(R.string.offset_value, "+100")))
+            compose.onNodeWithTag(AudioPreviewTags.TIMING)
+                .assertTextContains(context.getString(R.string.offset_value, "+100"))
             compose.onNodeWithTag(AudioPreviewTags.PLAY).performScrollTo().assertIsEnabled()
+        }
+    }
+
+    @Test
+    fun openTimingSheetSurvivesRecreation() {
+        launch().use { scenario ->
+            selectBoth(wav.name)
+            compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
+            compose.onNodeWithTag(AudioPreviewTags.OFFSET)
+                .performSemanticsAction(SemanticsActions.SetProgress) { it(-40f) }
+
+            scenario.recreate()
+
+            val offset = context.getString(R.string.offset_value, "-40")
+            compose.onNodeWithTag(AudioPreviewTags.OFFSET).assert(stateDescription(offset))
+            Espresso.pressBack()
+            compose.onNodeWithTag(AudioPreviewTags.TIMING).assertTextContains(offset)
         }
     }
 
@@ -130,7 +150,8 @@ class MainActivityRecreationTest {
             scenario.recreate()
 
             compose.waitUntilExactlyOneExists(hasTestTag(AudioPreviewTags.PLAY) and isEnabled(), 5_000)
-            compose.onNodeWithTag(AudioPreviewTags.STOP).assertIsNotEnabled()
+            // Stopped: the main button is the play button again.
+            compose.onNodeWithTag(AudioPreviewTags.STOP).assertDoesNotExist()
             assertEquals(1, stops.get())
             compose.onNodeWithTag(AudioPreviewTags.NAME_B).assertTextEquals(FAKE_NAME)
             startPlayback()

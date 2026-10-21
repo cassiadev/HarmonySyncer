@@ -3,7 +3,8 @@ package com.cassiadev.harmonysyncer.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // Light is the reference: values are the design/css/tokens.css OKLCH tokens converted to sRGB.
-val LightBackground = Color(0xFFF8F8F8)
+// --bg is a subtle fill (timing row, icon tile); the page itself is --surface, as in design/css/app.css.
+val LightFill = Color(0xFFF8F8F8)
 val LightSurface = Color(0xFFFFFFFF)
 val LightForeground = Color(0xFF182028)
 val LightMuted = Color(0xFF5C6C7C)
@@ -14,11 +15,12 @@ val LightDanger = Color(0xFFAC2724)
 val LightSuccess = Color(0xFF006B39)
 val LightOnAccent = Color(0xFFFFFFFF)
 
-// The design accent reaches only 4.34:1 on the Audio A card tint; text on that tint uses this one.
+// As text, the design accent reaches only 4.34:1 on the Audio A card tint and 4.49:1 on the
+// background; Audio A text uses this one. Buttons, sliders and icons keep LightAccent.
 val LightAccentOnTint = Color(0xFF0267DC)
 
 // Dark keeps each token's hue and only moves its lightness; it is used only in system dark mode.
-val DarkBackground = Color(0xFF0B1015)
+val DarkFill = Color(0xFF0B1015)
 val DarkSurface = Color(0xFF161B21)
 val DarkForeground = Color(0xFFE7ECF0)
 val DarkMuted = Color(0xFF99A6B4)

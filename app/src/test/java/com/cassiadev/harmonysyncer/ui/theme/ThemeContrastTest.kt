@@ -1,5 +1,6 @@
 package com.cassiadev.harmonysyncer.ui.theme
 
+import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import org.junit.Assert.assertEquals
@@ -11,7 +12,8 @@ class ThemeContrastTest {
     fun `light scheme keeps the design tokens`() {
         assertEquals(Color(0xFF006DEC), LightColors.primary)
         assertEquals(Color(0xFF007165), LightColors.secondary)
-        assertEquals(Color(0xFFF8F8F8), LightColors.background)
+        assertEquals(Color(0xFFFFFFFF), LightColors.background) // app.css: body { background: var(--surface) }
+        assertEquals(Color(0xFFF8F8F8), LightColors.surfaceVariant) // --bg fill
         assertEquals(Color(0xFF182028), LightColors.onSurface)
         assertEquals(Color(0xFF5C6C7C), LightColors.onSurfaceVariant)
         assertEquals(Color(0xFFAC2724), LightColors.error)
@@ -22,17 +24,15 @@ class ThemeContrastTest {
     // light surfaceContainerLowest and onTertiary are white in both, so an inequality check fails correct code.
     @Test
     fun `component roles are derived from the brand palette`() {
-        for ((name, scheme, extra) in listOf(
-            Triple("light", LightColors, LightExtraColors),
-            Triple("dark", DarkColors, DarkExtraColors),
-        )) {
+        for ((name, scheme, extra, fill) in cases) {
             val expected = mapOf(
                 "surfaceContainerLowest" to (scheme.surfaceContainerLowest to scheme.surface),
                 "surfaceContainerLow (bottom sheet)" to (scheme.surfaceContainerLow to scheme.surface),
                 "surfaceContainer" to (scheme.surfaceContainer to scheme.surface),
                 "surfaceContainerHigh" to (scheme.surfaceContainerHigh to scheme.surface),
                 "surfaceContainerHighest" to (scheme.surfaceContainerHighest to scheme.surface),
-                "surfaceVariant" to (scheme.surfaceVariant to scheme.background),
+                "background (page)" to (scheme.background to scheme.surface),
+                "surfaceVariant" to (scheme.surfaceVariant to fill),
                 "primaryContainer" to (scheme.primaryContainer to scheme.primary.tintOver(scheme.surface, TINT_TILE)),
                 "onPrimaryContainer" to (scheme.onPrimaryContainer to extra.accentOnTint),
                 "secondaryContainer (progress, slider track)" to
@@ -50,16 +50,16 @@ class ThemeContrastTest {
 
     @Test
     fun `text pairs reach WCAG AA in both schemes`() {
-        for ((name, scheme, extra) in listOf(
-            Triple("light", LightColors, LightExtraColors),
-            Triple("dark", DarkColors, DarkExtraColors),
-        )) {
+        for ((name, scheme, extra) in cases) {
             val pairs = mapOf(
                 "body" to (scheme.onBackground to scheme.background),
                 "muted/bg" to (scheme.onSurfaceVariant to scheme.background),
                 "muted/surface" to (scheme.onSurfaceVariant to scheme.surface),
+                "muted/fill" to (scheme.onSurfaceVariant to scheme.surfaceVariant),
+                "B text/fill" to (scheme.secondary to scheme.surfaceVariant),
                 "button" to (scheme.onPrimary to scheme.primary),
                 "A label/card" to (extra.accentOnTint to scheme.primary.tintOver(scheme.surface, TINT_SOFT)),
+                "A text/bg" to (extra.accentOnTint to scheme.background),
                 "B label/card" to (scheme.secondary to scheme.secondary.tintOver(scheme.surface, TINT_SOFT)),
                 "muted/A card" to (scheme.onSurfaceVariant to scheme.primary.tintOver(scheme.surface, TINT_SOFT)),
                 "muted/B card" to (scheme.onSurfaceVariant to scheme.secondary.tintOver(scheme.surface, TINT_SOFT)),
@@ -72,6 +72,13 @@ class ThemeContrastTest {
             }
         }
     }
+
+    private data class Case(val name: String, val scheme: ColorScheme, val extra: HarmonyExtraColors, val fill: Color)
+
+    private val cases = listOf(
+        Case("light", LightColors, LightExtraColors, LightFill),
+        Case("dark", DarkColors, DarkExtraColors, DarkFill),
+    )
 
     private fun contrast(a: Color, b: Color): Double {
         val (hi, lo) = listOf(a.luminance().toDouble(), b.luminance().toDouble()).sortedDescending()
