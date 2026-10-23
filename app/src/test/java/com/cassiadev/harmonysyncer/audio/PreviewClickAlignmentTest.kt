@@ -53,8 +53,8 @@ class PreviewClickAlignmentTest {
      */
     private fun findClickFrames(clip: PcmClip): List<Int> {
         val half = clip.samples.size / 2
-        fun loudest(range: IntRange) = range.maxBy { abs(clip.samples[it].toInt()) }
-        return listOf(loudest(0 until half), loudest(half until clip.samples.size))
+        fun findLoudestFrame(range: IntRange) = range.maxBy { abs(clip.samples[it].toInt()) }
+        return listOf(findLoudestFrame(0 until half), findLoudestFrame(half until clip.samples.size))
     }
 
     private companion object {
