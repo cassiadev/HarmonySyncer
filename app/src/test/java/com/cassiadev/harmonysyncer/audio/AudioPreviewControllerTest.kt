@@ -282,6 +282,18 @@ class AudioPreviewControllerTest {
     }
 
     @Test
+    fun `close drops the normalized clips`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(audio("a.wav"), audio("b.wav"))
+        harness.controller.play()
+        runCurrent()
+        assertTrue(harness.controller.hasNormalizedClips)
+
+        harness.controller.close()
+        assertFalse(harness.controller.hasNormalizedClips)
+    }
+
+    @Test
     fun `normalization stopped before it finishes is not reused`() = runTest {
         val harness = FakeAudioHarness(this)
         harness.selectPair(audio("a.wav"), audio("b.wav"))

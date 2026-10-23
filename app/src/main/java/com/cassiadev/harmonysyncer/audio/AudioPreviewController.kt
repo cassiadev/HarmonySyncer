@@ -3,6 +3,7 @@ package com.cassiadev.harmonysyncer.audio
 import android.content.Context
 import android.content.res.AssetManager
 import android.net.Uri
+import androidx.annotation.VisibleForTesting
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -96,6 +97,10 @@ class AudioPreviewController internal constructor(
     private var clipB: PcmClip? = null
     /** clipA and clipB at a shared rate, kept across previews until either file changes. */
     private var normalizedClips: Pair<PcmClip, PcmClip>? = null
+
+    // Nothing observable remains after close, so tests read the cache directly.
+    @VisibleForTesting
+    internal val hasNormalizedClips: Boolean get() = normalizedClips != null
     private var loadJob: Job? = null
     private var playbackJob: Job? = null
     private var playbackSession = 0L
