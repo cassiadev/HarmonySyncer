@@ -62,6 +62,7 @@ class PreviewLongFileTest {
         if (it < leadingSilence) 0 else (samples[it - leadingSilence] / 2).toShort()
     }
 
+    /** Silence with a click (one loud sample, used as a time marker) on every whole second. */
     private fun clickTrack(rate: Int) = PcmClip(
         ShortArray(AUDIO_MAX_DURATION_SECONDS * rate).apply {
             for (second in 1 until AUDIO_MAX_DURATION_SECONDS) this[second * rate] = 20_000
@@ -69,7 +70,7 @@ class PreviewLongFileTest {
         rate,
     )
 
-    /** The loudest frame within half a second of each whole second. */
+    /** For each whole second, the loudest sample within half a second of it: where its click landed. */
     private fun clickFrames(clip: PcmClip) = (1 until AUDIO_MAX_DURATION_SECONDS).map { second ->
         (second * RATE - RATE / 2 until second * RATE + RATE / 2).maxBy { abs(clip.samples[it].toInt()) }
     }

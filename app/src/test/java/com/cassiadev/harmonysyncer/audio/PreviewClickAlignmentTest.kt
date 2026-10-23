@@ -5,8 +5,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 /**
- * Both tracks get the same clicks one second after the start and one second before the end of a
- * 30-second clip. Each track must put them on exactly the same output samples, with no drift.
+ * A click here is one loud sample in silence. It sits on exactly one sample, so it works as a time
+ * marker. Both 30-second tracks get a click 1 second after the start and 1 second before the end;
+ * after mixing, each track's clicks must land on exactly the expected output samples, so the two
+ * tracks are 0 samples apart at both ends.
  */
 class PreviewClickAlignmentTest {
     @Test
@@ -36,6 +38,7 @@ class PreviewClickAlignmentTest {
         }
     }
 
+    /** Silence with one click at each marker second. */
     private fun clickTrack(rate: Int) = PcmClip(
         ShortArray(CLIP_SECONDS * rate).apply {
             this[CLICK_START_SECONDS * rate] = 20_000
@@ -44,7 +47,10 @@ class PreviewClickAlignmentTest {
         rate,
     )
 
-    /** The loudest frame in each half: the resampler's ringing stays below the click peak. */
+    /**
+     * The loudest sample in each half of the clip. Resampling spreads a click into small ripples
+     * around it, but the loudest sample stays where the click is.
+     */
     private fun clickFrames(clip: PcmClip): List<Int> {
         val half = clip.samples.size / 2
         fun loudest(range: IntRange) = range.maxBy { abs(clip.samples[it].toInt()) }
