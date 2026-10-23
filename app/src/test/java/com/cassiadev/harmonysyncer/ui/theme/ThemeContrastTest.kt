@@ -72,7 +72,7 @@ class ThemeContrastTest {
                 "success/bg" to (extra.success to scheme.background),
             )
             for ((pair, colors) in pairs) {
-                val ratio = contrast(colors.first, colors.second)
+                val ratio = computeContrast(colors.first, colors.second)
                 assertTrue("$name $pair contrast $ratio", ratio >= 4.5)
             }
         }
@@ -85,7 +85,7 @@ class ThemeContrastTest {
         Case("dark", DarkColors, DarkExtraColors, DarkFill),
     )
 
-    private fun contrast(a: Color, b: Color): Double {
+    private fun computeContrast(a: Color, b: Color): Double {
         val (hi, lo) = listOf(a.luminance().toDouble(), b.luminance().toDouble()).sortedDescending()
         return (hi + 0.05) / (lo + 0.05)
     }

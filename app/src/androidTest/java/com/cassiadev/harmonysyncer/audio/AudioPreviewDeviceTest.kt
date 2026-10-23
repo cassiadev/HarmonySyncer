@@ -20,7 +20,7 @@ class AudioPreviewDeviceTest {
         val samples = shortArrayOf(2_000, -4_000, Short.MIN_VALUE, Short.MAX_VALUE)
         val file = File.createTempFile("preview-", ".wav", context.cacheDir)
         try {
-            file.writeBytes(wavBytes(samples, 44_100))
+            file.writeBytes(buildWavBytes(samples, 44_100))
             val loaded = AudioFileLoader(context.contentResolver).load(Uri.fromFile(file))
             assertEquals(file.name, loaded.name)
             assertEquals(44_100, loaded.clip.sampleRate)

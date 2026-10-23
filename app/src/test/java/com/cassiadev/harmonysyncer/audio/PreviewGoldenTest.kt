@@ -21,7 +21,7 @@ class PreviewGoldenTest {
                 "22050/192000" to "69ed8fc8df299b6f1594869fa5d28494965257e91782dd4a3b599baacdc8d449",
             ),
             RATE_PAIRS.associate { (rateA, rateB) ->
-                "$rateA/$rateB" to digest(rateA, rateB) { a, b, settings -> renderPreview(a, b, settings) }
+                "$rateA/$rateB" to computeDigest(rateA, rateB) { a, b, settings -> renderPreview(a, b, settings) }
             },
         )
     }
@@ -35,17 +35,17 @@ class PreviewGoldenTest {
                 "22050/192000" to "526f8278ff4427dfbd1ea3b36fad62d8d07288ea6eea2fabbfce0d950eb6087b",
             ),
             RATE_PAIRS.associate { (rateA, rateB) ->
-                "$rateA/$rateB" to digest(rateA, rateB) { a, b, settings -> preparePreview(a, b, settings) }
+                "$rateA/$rateB" to computeDigest(rateA, rateB) { a, b, settings -> preparePreview(a, b, settings) }
             },
         )
     }
 
-    private fun digest(rateA: Int, rateB: Int, render: (PcmClip, PcmClip, MixSettings) -> PcmClip): String {
+    private fun computeDigest(rateA: Int, rateB: Int, render: (PcmClip, PcmClip, MixSettings) -> PcmClip): String {
         val sha256 = MessageDigest.getInstance("SHA-256")
         // Both length orders matter: the two paths pad the shorter track differently.
         for ((millisA, millisB) in listOf(20 to 13, 13 to 20)) {
-            val a = PcmClip(noise(rateA * millisA / 1_000, seed = rateA), rateA)
-            val b = PcmClip(noise(rateB * millisB / 1_000, seed = rateB + 1), rateB)
+            val a = PcmClip(buildNoise(rateA * millisA / 1_000, seed = rateA), rateA)
+            val b = PcmClip(buildNoise(rateB * millisB / 1_000, seed = rateB + 1), rateB)
             for (offsetMs in intArrayOf(-300, -137, 0, 1, 250, 300)) {
                 for ((volumeA, volumeB) in listOf(1f to 1f, 0.3f to 0.7f, 1f to 0f)) {
                     val result = render(a, b, MixSettings(volumeA, volumeB, offsetMs))
@@ -62,7 +62,7 @@ class PreviewGoldenTest {
     }
 
     /** Full-scale pseudo-random samples from a fixed integer recurrence, independent of library RNGs. */
-    private fun noise(frames: Int, seed: Int): ShortArray {
+    private fun buildNoise(frames: Int, seed: Int): ShortArray {
         var state = seed
         return ShortArray(frames) {
             state = state * 1_103_515_245 + 12_345

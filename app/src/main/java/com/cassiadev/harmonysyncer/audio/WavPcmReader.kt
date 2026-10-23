@@ -9,10 +9,10 @@ import java.io.InputStream
  */
 fun readWavPcm16(input: InputStream): PcmClip {
     val header = input.readExactly(12)
-    require(header.chunkId(0) == "RIFF" && header.chunkId(8) == "WAVE") {
+    require(header.decodeChunkId(0) == "RIFF" && header.decodeChunkId(8) == "WAVE") {
         "PCM 16비트 모노 WAV 파일을 선택해 주세요."
     }
-    val riffSize = header.unsignedInt(4)
+    val riffSize = header.decodeUnsignedInt(4)
     require(riffSize >= 4) { "WAV 파일의 헤더가 올바르지 않습니다." }
     require(riffSize + 8 <= AUDIO_MAX_FILE_BYTES) {
         AUDIO_TOO_LARGE_MESSAGE
@@ -24,10 +24,10 @@ fun readWavPcm16(input: InputStream): PcmClip {
     while (remaining > 0) {
         require(remaining >= 8) { "WAV 파일의 청크 헤더가 잘렸습니다." }
         val chunkHeader = input.readExactly(8)
-        val size = chunkHeader.unsignedInt(4)
+        val size = chunkHeader.decodeUnsignedInt(4)
         val paddedSize = size + (size and 1L)
         require(paddedSize <= remaining - 8) { "WAV 파일의 청크 크기가 올바르지 않습니다." }
-        when (chunkHeader.chunkId(0)) {
+        when (chunkHeader.decodeChunkId(0)) {
             "fmt " -> {
                 require(sampleRate == null) { "WAV 파일에 형식 정보가 중복되어 있습니다." }
                 val parsedRate = readFormat(input, size)
@@ -59,12 +59,12 @@ fun readWavPcm16(input: InputStream): PcmClip {
 private fun readFormat(input: InputStream, size: Long): Int {
     require(size >= 16 && size != 17L) { "WAV 파일의 형식 정보가 잘렸습니다." }
     val format = input.readExactly(16)
-    val tag = format.unsignedShort(0)
-    val channels = format.unsignedShort(2)
-    val rate = format.unsignedInt(4)
-    val byteRate = format.unsignedInt(8)
-    val blockAlign = format.unsignedShort(12)
-    val bits = format.unsignedShort(14)
+    val tag = format.decodeUnsignedShort(0)
+    val channels = format.decodeUnsignedShort(2)
+    val rate = format.decodeUnsignedInt(4)
+    val byteRate = format.decodeUnsignedInt(8)
+    val blockAlign = format.decodeUnsignedShort(12)
+    val bits = format.decodeUnsignedShort(14)
     require(tag == 1 && channels == 1 && bits == 16) {
         "PCM 16비트 모노 WAV 파일만 지원합니다."
     }
@@ -75,7 +75,7 @@ private fun readFormat(input: InputStream, size: Long): Int {
         "WAV 파일의 데이터 정렬 정보가 올바르지 않습니다."
     }
     if (size > 16) {
-        val extensionSize = input.readExactly(2).unsignedShort(0)
+        val extensionSize = input.readExactly(2).decodeUnsignedShort(0)
         require(extensionSize.toLong() == size - 18) {
             "WAV 파일의 확장 형식 정보가 올바르지 않습니다."
         }
@@ -98,7 +98,7 @@ private fun InputStream.readSamples(sampleCount: Int): ShortArray {
         val count = minOf(buffer.size / 2, sampleCount - sampleOffset)
         readFully(buffer, count * 2)
         for (index in 0 until count) {
-            samples[sampleOffset + index] = buffer.unsignedShort(index * 2).toShort()
+            samples[sampleOffset + index] = buffer.decodeUnsignedShort(index * 2).toShort()
         }
         sampleOffset += count
     }
@@ -133,11 +133,11 @@ private fun InputStream.readFully(buffer: ByteArray, count: Int) {
     }
 }
 
-private fun ByteArray.chunkId(offset: Int): String =
+private fun ByteArray.decodeChunkId(offset: Int): String =
     String(this, offset, 4, Charsets.US_ASCII)
 
-private fun ByteArray.unsignedShort(offset: Int): Int =
+private fun ByteArray.decodeUnsignedShort(offset: Int): Int =
     (this[offset].toInt() and 0xff) or ((this[offset + 1].toInt() and 0xff) shl 8)
 
-private fun ByteArray.unsignedInt(offset: Int): Long =
-    unsignedShort(offset).toLong() or (unsignedShort(offset + 2).toLong() shl 16)
+private fun ByteArray.decodeUnsignedInt(offset: Int): Long =
+    decodeUnsignedShort(offset).toLong() or (decodeUnsignedShort(offset + 2).toLong() shl 16)
