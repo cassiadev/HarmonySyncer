@@ -185,7 +185,17 @@ class AudioPreviewController internal constructor(
         state = state.copy(phase = PreviewPhase.Rendering, error = null, failedSlot = null)
         playbackJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                val preview = withContext(renderDispatcher) { render(a, b, settings) }
+                val preview = withContext(renderDispatcher) {
+                    try {
+                        render(a, b, settings)
+                    } catch (outOfMemory: OutOfMemoryError) {
+                        // Only the mix is caught: its partial buffers are unreachable now, so editing can resume.
+                        throw IllegalStateException(
+                            "메모리가 부족해 두 음성을 합치지 못했습니다. 더 짧은 파일로 다시 시도해 주세요.",
+                            outOfMemory,
+                        )
+                    }
+                }
                 ensureActive()
                 state = state.copy(phase = PreviewPhase.Playing)
                 playPreview(preview)

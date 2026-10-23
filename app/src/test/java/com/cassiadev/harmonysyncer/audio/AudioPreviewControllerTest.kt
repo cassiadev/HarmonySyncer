@@ -239,6 +239,26 @@ class AudioPreviewControllerTest {
     }
 
     @Test
+    fun `running out of memory while mixing explains it and keeps both files`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(audio("a.wav"), audio("b.wav"))
+        harness.renderBlock = { _, _, _ -> throw OutOfMemoryError() }
+        harness.controller.play()
+        runCurrent()
+        assertEquals("메모리가 부족해 두 음성을 합치지 못했습니다. 더 짧은 파일로 다시 시도해 주세요.", harness.controller.state.error)
+        assertTrue(harness.controller.state.canEdit)
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        assertEquals("b.wav", harness.controller.state.trackB?.name)
+        assertEquals(0, harness.playedClips.size)
+
+        harness.renderBlock = { a, _, _ -> a }
+        harness.controller.play()
+        runCurrent()
+        assertEquals(1, harness.playedClips.size)
+        harness.controller.close()
+    }
+
+    @Test
     fun `phase tells loading, rendering and playback apart`() = runTest {
         val harness = FakeAudioHarness(this)
         val loading = CompletableDeferred<LoadedAudioFile>()
