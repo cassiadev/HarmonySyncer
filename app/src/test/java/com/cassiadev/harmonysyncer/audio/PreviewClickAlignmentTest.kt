@@ -27,8 +27,8 @@ class PreviewClickAlignmentTest {
 
     private fun assertClicksAligned(render: (PcmClip, PcmClip, MixSettings) -> PcmClip) {
         for ((rateA, rateB) in listOf(48_000 to 48_000, 44_100 to 48_000, 48_000 to 44_100)) {
-            val a = clickTrack(rateA)
-            val b = clickTrack(rateB)
+            val a = buildClickTrack(rateA)
+            val b = buildClickTrack(rateB)
             val rate = maxOf(rateA, rateB)
             val expected = listOf(CLICK_START_SECONDS * rate, (CLIP_SECONDS - CLICK_END_MARGIN_SECONDS) * rate)
             val onlyA = render(a, b, MixSettings(volumeB = 0f))
@@ -39,7 +39,7 @@ class PreviewClickAlignmentTest {
     }
 
     /** Silence with one click at each marker second. */
-    private fun clickTrack(rate: Int) = PcmClip(
+    private fun buildClickTrack(rate: Int) = PcmClip(
         ShortArray(CLIP_SECONDS * rate).apply {
             this[CLICK_START_SECONDS * rate] = 20_000
             this[(CLIP_SECONDS - CLICK_END_MARGIN_SECONDS) * rate] = 20_000

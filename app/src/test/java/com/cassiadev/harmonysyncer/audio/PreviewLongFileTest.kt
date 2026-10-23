@@ -21,8 +21,8 @@ class PreviewLongFileTest {
 
     @Test
     fun `same rate files keep every frame at full length and with the largest offset`() {
-        val a = patternTrack(seed = 7_919)
-        val b = patternTrack(seed = 104_729)
+        val a = buildPatternTrack(seed = 7_919)
+        val b = buildPatternTrack(seed = 104_729)
         val offsetFrames = MAX_OFFSET_MS * OUTPUT_RATE / 1_000
         for ((path, render) in renderPaths) {
             assertArrayEquals(
@@ -40,8 +40,8 @@ class PreviewLongFileTest {
 
     @Test
     fun `resampled files keep a click on every second at full length`() {
-        val a = clickTrack(44_100)
-        val b = clickTrack(OUTPUT_RATE)
+        val a = buildClickTrack(44_100)
+        val b = buildClickTrack(OUTPUT_RATE)
         val expected = (1 until AUDIO_MAX_DURATION_SECONDS).map { it * OUTPUT_RATE }
         for ((path, render) in renderPaths) {
             val onlyA = render(a, b, MixSettings(volumeB = 0f))
@@ -52,7 +52,7 @@ class PreviewLongFileTest {
     }
 
     /** Even values, so half volume is exact; neighbouring frames differ, so any shift is visible. */
-    private fun patternTrack(seed: Long) = PcmClip(
+    private fun buildPatternTrack(seed: Long) = PcmClip(
         ShortArray(AUDIO_MAX_DURATION_SECONDS * OUTPUT_RATE) { (((it * seed) % 32_768) - 16_384).toInt().times(2).toShort() },
         OUTPUT_RATE,
     )
@@ -63,7 +63,7 @@ class PreviewLongFileTest {
     }
 
     /** Silence with a click (one loud sample, used as a time marker) on every whole second. */
-    private fun clickTrack(rate: Int) = PcmClip(
+    private fun buildClickTrack(rate: Int) = PcmClip(
         ShortArray(AUDIO_MAX_DURATION_SECONDS * rate).apply {
             for (second in 1 until AUDIO_MAX_DURATION_SECONDS) this[second * rate] = 20_000
         },
