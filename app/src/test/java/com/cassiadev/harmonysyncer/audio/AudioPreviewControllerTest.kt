@@ -259,6 +259,47 @@ class AudioPreviewControllerTest {
     }
 
     @Test
+    fun `repeat previews reuse normalized clips until a file changes`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.normalizeBlock = { a, b -> PcmClip(a.samples, 96_000) to PcmClip(b.samples, 96_000) }
+        harness.selectPair(audio("a.wav"), audio("b.wav"))
+
+        harness.controller.play()
+        runCurrent()
+        harness.controller.updateSettings(MixSettings(offsetMs = 120))
+        harness.controller.play()
+        runCurrent()
+        assertEquals(1, harness.normalizeCalls)
+        assertEquals(96_000, harness.renderRequests.last().a.sampleRate)
+        assertEquals(120, harness.renderRequests.last().settings.offsetMs)
+
+        harness.controller.selectFile(TrackSlot.B) { audio("c.wav") }
+        runCurrent()
+        harness.controller.play()
+        runCurrent()
+        assertEquals(2, harness.normalizeCalls)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `normalization stopped before it finishes is not reused`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(audio("a.wav"), audio("b.wav"))
+        harness.normalizeBlock = { _, _ -> awaitCancellation() }
+        harness.controller.play()
+        runCurrent()
+        harness.controller.stop()
+        runCurrent()
+
+        harness.normalizeBlock = { a, b -> a to b }
+        harness.controller.play()
+        runCurrent()
+        assertEquals(2, harness.normalizeCalls)
+        assertEquals(1, harness.playedClips.size)
+        harness.controller.close()
+    }
+
+    @Test
     fun `phase tells loading, rendering and playback apart`() = runTest {
         val harness = FakeAudioHarness(this)
         val loading = CompletableDeferred<LoadedAudioFile>()
@@ -443,6 +484,8 @@ class AudioPreviewControllerTest {
         var stopCalls = 0
         var closeCalls = 0
         var sampleBlock: suspend () -> Pair<LoadedAudioFile, LoadedAudioFile> = { error("Set sampleBlock in the test") }
+        var normalizeBlock: suspend (PcmClip, PcmClip) -> Pair<PcmClip, PcmClip> = { a, b -> a to b }
+        var normalizeCalls = 0
         val controller = AudioPreviewController(
             scope = CoroutineScope(ownedJob + dispatcher),
             ioDispatcher = dispatcher,
@@ -459,6 +502,10 @@ class AudioPreviewControllerTest {
             stopPlayback = { stopCalls++ },
             closePlayback = { closeCalls++ },
             loadSamplePair = { sampleBlock() },
+            normalize = { a, b ->
+                normalizeCalls++
+                normalizeBlock(a, b)
+            },
         )
 
         fun selectPair(a: LoadedAudioFile, b: LoadedAudioFile) {

@@ -15,6 +15,14 @@ class PreviewClickAlignmentTest {
         assertClicksAligned { a, b, settings -> renderPreview(a, b, settings) }
     }
 
+    @Test
+    fun `thirty second clips stay aligned when a preview reuses normalized clips`() {
+        assertClicksAligned { a, b, settings ->
+            val (normalizedA, normalizedB) = normalizePreviewRates(a, b)
+            preparePreview(normalizedA, normalizedB, settings)
+        }
+    }
+
     private fun assertClicksAligned(render: (PcmClip, PcmClip, MixSettings) -> PcmClip) {
         for ((rateA, rateB) in listOf(48_000 to 48_000, 44_100 to 48_000, 48_000 to 44_100)) {
             val a = clickTrack(rateA)

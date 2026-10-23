@@ -65,6 +65,8 @@ class AudioPreviewController internal constructor(
     private val loadSamplePair: suspend () -> Pair<LoadedAudioFile, LoadedAudioFile> = {
         error("No bundled sample in this controller")
     },
+    // The identity is always correct: render still resamples clips that were not normalized.
+    private val normalize: suspend (PcmClip, PcmClip) -> Pair<PcmClip, PcmClip> = { a, b -> a to b },
 ) {
     constructor(context: Context) : this(createDependencies(context))
 
@@ -81,6 +83,10 @@ class AudioPreviewController internal constructor(
         stopPlayback = dependencies.player::stop,
         closePlayback = dependencies.player::close,
         loadSamplePair = { BundledVocalDemo.loadSamplePair(dependencies.assets::open) },
+        normalize = { a, b ->
+            val context = currentCoroutineContext()
+            normalizePreviewRates(a, b, checkActive = { context.ensureActive() })
+        },
     )
 
     var state by mutableStateOf(PreviewUiState())
@@ -88,6 +94,8 @@ class AudioPreviewController internal constructor(
 
     private var clipA: PcmClip? = null
     private var clipB: PcmClip? = null
+    /** clipA and clipB at a shared rate, kept across previews until either file changes. */
+    private var normalizedClips: Pair<PcmClip, PcmClip>? = null
     private var loadJob: Job? = null
     private var playbackJob: Job? = null
     private var playbackSession = 0L
@@ -121,6 +129,7 @@ class AudioPreviewController internal constructor(
                 val loaded = withContext(ioDispatcher) { block() }
                 ensureActive()
                 if (closed) return@launch
+                normalizedClips = null
                 for ((slot, file) in loaded) {
                     val info = ClipInfo(
                         file.name,
@@ -180,16 +189,19 @@ class AudioPreviewController internal constructor(
         val a = clipA ?: return
         val b = clipB ?: return
         val settings = state.settings
+        val cached = normalizedClips
         val session = ++playbackSession
         // Reserve the session synchronously; repeated taps cannot launch another mix.
         state = state.copy(phase = PreviewPhase.Rendering, error = null, failedSlot = null)
         playbackJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                val preview = withContext(renderDispatcher) {
+                val (normalized, preview) = withContext(renderDispatcher) {
                     try {
-                        render(a, b, settings)
+                        val clips = cached ?: normalize(a, b)
+                        clips to render(clips.first, clips.second, settings)
                     } catch (outOfMemory: OutOfMemoryError) {
-                        // Only the mix is caught: its partial buffers are unreachable now, so editing can resume.
+                        // Only rate conversion and mixing are caught: their partial buffers are unreachable now,
+                        // so editing can resume.
                         throw IllegalStateException(
                             "메모리가 부족해 두 음성을 합치지 못했습니다. 더 짧은 파일로 다시 시도해 주세요.",
                             outOfMemory,
@@ -197,6 +209,8 @@ class AudioPreviewController internal constructor(
                     }
                 }
                 ensureActive()
+                // A stopped session or replaced file must not leave clips from another pair behind.
+                if (session == playbackSession && clipA === a && clipB === b) normalizedClips = normalized
                 state = state.copy(phase = PreviewPhase.Playing)
                 playPreview(preview)
             } catch (cancellation: CancellationException) {
@@ -236,6 +250,7 @@ class AudioPreviewController internal constructor(
         loadJob = null
         clipA = null
         clipB = null
+        normalizedClips = null
         state = state.copy(phase = PreviewPhase.Idle)
         try {
             closePlayback()
