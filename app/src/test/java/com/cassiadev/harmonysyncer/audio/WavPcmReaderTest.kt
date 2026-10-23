@@ -27,6 +27,15 @@ class WavPcmReaderTest {
     }
 
     @Test
+    fun `decodes samples from fixed little endian bytes`() {
+        // Written by hand so a byte order mistake shared with buildDataChunk cannot cancel out.
+        val data = byteArrayOf(0x01, 0x00, 0x00, 0x80.toByte(), 0xff.toByte(), 0x7f, 0x34, 0x12)
+        val clip = readWavPcm16(buildWave(buildFormatChunk(), buildChunk("data", data)).inputStream())
+
+        assertArrayEquals(shortArrayOf(1, Short.MIN_VALUE, Short.MAX_VALUE, 0x1234), clip.samples)
+    }
+
+    @Test
     fun `supports data appearing before the format chunk`() {
         val clip = readWavPcm16(buildWave(buildDataChunk(shortArrayOf(-123, 456)), buildFormatChunk()).inputStream())
 
