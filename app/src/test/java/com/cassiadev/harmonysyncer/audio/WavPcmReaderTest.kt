@@ -5,6 +5,8 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.SequenceInputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -313,7 +315,8 @@ class WavPcmReaderTest {
 
     private fun buildDataChunk(samples: ShortArray): ByteArray = buildChunk(
         "data",
-        ByteArrayOutputStream().apply { samples.forEach { write(encodeU16(it.toInt())) } }.toByteArray(),
+        ByteBuffer.allocate(samples.size * Short.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+            .apply { asShortBuffer().put(samples) }.array(),
     )
 
     private fun buildFormatChunk(
