@@ -46,8 +46,8 @@ class PreviewLongFileTest {
         for ((path, render) in renderPaths) {
             val onlyA = render(a, b, MixSettings(volumeB = 0f))
             assertEquals("A length through $path", AUDIO_MAX_DURATION_SECONDS * RATE, onlyA.samples.size)
-            assertEquals("A clicks through $path", expected, clickFrames(onlyA))
-            assertEquals("B clicks through $path", expected, clickFrames(render(a, b, MixSettings(volumeA = 0f))))
+            assertEquals("A clicks through $path", expected, findClickFrames(onlyA))
+            assertEquals("B clicks through $path", expected, findClickFrames(render(a, b, MixSettings(volumeA = 0f))))
         }
     }
 
@@ -71,7 +71,7 @@ class PreviewLongFileTest {
     )
 
     /** For each whole second, the loudest sample within half a second of it: where its click landed. */
-    private fun clickFrames(clip: PcmClip) = (1 until AUDIO_MAX_DURATION_SECONDS).map { second ->
+    private fun findClickFrames(clip: PcmClip) = (1 until AUDIO_MAX_DURATION_SECONDS).map { second ->
         (second * RATE - RATE / 2 until second * RATE + RATE / 2).maxBy { abs(clip.samples[it].toInt()) }
     }
 

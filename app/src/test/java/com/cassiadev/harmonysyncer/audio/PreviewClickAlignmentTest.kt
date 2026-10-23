@@ -33,8 +33,8 @@ class PreviewClickAlignmentTest {
             val expected = listOf(CLICK_START_SECONDS * rate, (CLIP_SECONDS - CLICK_END_MARGIN_SECONDS) * rate)
             val onlyA = render(a, b, MixSettings(volumeB = 0f))
             val onlyB = render(a, b, MixSettings(volumeA = 0f))
-            assertEquals("A clicks at $rateA + $rateB Hz", expected, clickFrames(onlyA))
-            assertEquals("B clicks at $rateA + $rateB Hz", expected, clickFrames(onlyB))
+            assertEquals("A clicks at $rateA + $rateB Hz", expected, findClickFrames(onlyA))
+            assertEquals("B clicks at $rateA + $rateB Hz", expected, findClickFrames(onlyB))
         }
     }
 
@@ -51,7 +51,7 @@ class PreviewClickAlignmentTest {
      * The loudest sample in each half of the clip. Resampling spreads a click into small ripples
      * around it, but the loudest sample stays where the click is.
      */
-    private fun clickFrames(clip: PcmClip): List<Int> {
+    private fun findClickFrames(clip: PcmClip): List<Int> {
         val half = clip.samples.size / 2
         fun loudest(range: IntRange) = range.maxBy { abs(clip.samples[it].toInt()) }
         return listOf(loudest(0 until half), loudest(half until clip.samples.size))
