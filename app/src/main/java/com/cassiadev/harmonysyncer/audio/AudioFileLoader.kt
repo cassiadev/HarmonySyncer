@@ -15,7 +15,7 @@ data class LoadedAudioFile(val name: String, val clip: PcmClip)
 class AudioFileLoader(private val resolver: ContentResolver) {
     suspend fun load(uri: Uri): LoadedAudioFile = withContext(Dispatchers.IO) {
         ensureActive()
-        val name = displayName(uri)
+        val name = queryDisplayName(uri)
         ensureActive()
         val clip = try {
             val input = resolver.openInputStream(uri)
@@ -48,7 +48,7 @@ class AudioFileLoader(private val resolver: ContentResolver) {
         LoadedAudioFile(name, clip)
     }
 
-    private fun displayName(uri: Uri): String {
+    private fun queryDisplayName(uri: Uri): String {
         val fallback = uri.lastPathSegment?.substringAfterLast('/')?.trim()
             ?.takeIf { it.isNotEmpty() } ?: "선택한 오디오"
         return try {

@@ -10,7 +10,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
@@ -24,6 +23,7 @@ import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isHeading
@@ -63,14 +63,14 @@ class AudioPreviewScreenTest {
 
     @Test
     fun startLayoutUntilBothFilesThenReadyLayout() {
-        val state = show(readyState().copy(trackB = null))
+        val state = show(buildReadyState().copy(trackB = null))
         compose.onNodeWithText("음성 B 추가").assertExists()
         compose.onNodeWithText("1/2개 선택됨").assertExists()
         compose.onNodeWithTag(AudioPreviewTags.PLAY).assertIsNotEnabled()
             .assertTextEquals("두 파일을 고르면 들을 수 있습니다")
         compose.onNodeWithText("WAV · M4A · 각 60초 이하").performScrollTo().assertExists()
 
-        state.value = readyState()
+        state.value = buildReadyState()
 
         compose.onNodeWithText("함께 들을 준비가 됐습니다").assertExists()
         compose.onNodeWithTag(AudioPreviewTags.PLAY).assertIsEnabled().assertTextContains("합쳐 듣기")
@@ -79,7 +79,7 @@ class AudioPreviewScreenTest {
 
     @Test
     fun loadingMarksOnlyThatCardAndExplainsTheLock() {
-        show(readyState().copy(phase = PreviewPhase.Loading(TrackSlot.B)))
+        show(buildReadyState().copy(phase = PreviewPhase.Loading(TrackSlot.B)))
         compose.onNodeWithText("음성 B 파일을 읽는 중입니다…").assertExists()
         compose.onNode(hasText("읽는 중…") and hasAnyAncestor(hasTestTag(AudioPreviewTags.CARD_B))).assertExists()
         compose.onNode(hasText("읽는 중…") and hasAnyAncestor(hasTestTag(AudioPreviewTags.CARD_A)))
@@ -91,12 +91,12 @@ class AudioPreviewScreenTest {
 
     @Test
     fun renderingAndPlayingShareTheStopButtonAndLockNotice() {
-        val state = show(readyState())
+        val state = show(buildReadyState())
         for ((phase, status, button) in listOf(
             Triple(PreviewPhase.Rendering, "두 음성을 합치는 중입니다…", "합치는 중…"),
             Triple(PreviewPhase.Playing, "합쳐 듣는 중입니다.", "정지"),
         )) {
-            state.value = readyState().copy(phase = phase)
+            state.value = buildReadyState().copy(phase = phase)
             compose.onNodeWithText(status).assertExists()
             compose.onNodeWithTag(AudioPreviewTags.STOP).assertIsEnabled().assertTextContains(button)
             compose.onNodeWithTag(AudioPreviewTags.PLAY).assertDoesNotExist()
@@ -109,7 +109,7 @@ class AudioPreviewScreenTest {
 
     @Test
     fun failedLoadIsShownOnThatCardWithKeptNotice() {
-        show(readyState().copy(error = AUDIO_TOO_LONG_MESSAGE, failedSlot = TrackSlot.B))
+        show(buildReadyState().copy(error = AUDIO_TOO_LONG_MESSAGE, failedSlot = TrackSlot.B))
         compose.onNode(hasText(AUDIO_TOO_LONG_MESSAGE) and hasAnyAncestor(hasTestTag(AudioPreviewTags.CARD_B)))
             .assertExists()
         compose.onAllNodesWithText(AUDIO_TOO_LONG_MESSAGE).assertCountEquals(1)
@@ -127,7 +127,7 @@ class AudioPreviewScreenTest {
     @Test
     fun playbackErrorIsShownOnceAboveTheButton() {
         val message = "이 기기에서 미리 듣기를 재생할 수 없습니다."
-        show(readyState().copy(error = message))
+        show(buildReadyState().copy(error = message))
         compose.onAllNodesWithText(message).assertCountEquals(1)
         compose.onNode(hasText(message) and hasAnyAncestor(hasTestTag(AudioPreviewTags.CARD_A))).assertDoesNotExist()
         compose.onNodeWithText(KEPT_NOTICE).assertDoesNotExist()
@@ -135,7 +135,7 @@ class AudioPreviewScreenTest {
 
     @Test
     fun volumeAndTimingAreUsedOnNextPlayAndPlaybackLocksEditing() {
-        var state by mutableStateOf(readyState())
+        var state by mutableStateOf(buildReadyState())
         var playedSettings: MixSettings? = null
         var stopped = false
         compose.setContent {
@@ -155,12 +155,12 @@ class AudioPreviewScreenTest {
         compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
         compose.onNodeWithContentDescription("B 추가 이동")
             .performSemanticsAction(SemanticsActions.SetProgress) { it(100f) }
-        compose.onNodeWithContentDescription("B 추가 이동").assert(stateDescription("+100 ms"))
+        compose.onNodeWithContentDescription("B 추가 이동").assert(hasStateDescription("+100 ms"))
         Espresso.pressBack()
 
         compose.onNodeWithContentDescription("B 추가 이동").assertDoesNotExist()
         compose.onNodeWithTag(AudioPreviewTags.TIMING).assertTextContains("+100 ms")
-        compose.onNodeWithContentDescription("B 음량").assert(stateDescription("0%"))
+        compose.onNodeWithContentDescription("B 음량").assert(hasStateDescription("0%"))
         compose.onNodeWithTag(AudioPreviewTags.PLAY).performScrollTo().performClick()
         compose.runOnIdle { assertEquals(MixSettings(volumeB = 0f, offsetMs = 100), playedSettings) }
 
@@ -176,12 +176,12 @@ class AudioPreviewScreenTest {
     @Test
     fun timingSheetResetsOffset() {
         var changed: MixSettings? = null
-        val state = show(readyState().copy(settings = MixSettings(offsetMs = 50)), onSettingsChange = { changed = it })
+        val state = show(buildReadyState().copy(settings = MixSettings(offsetMs = 50)), onSettingsChange = { changed = it })
         compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
         compose.onNodeWithText("0으로").assertIsEnabled().performClick()
         compose.runOnIdle { assertEquals(MixSettings(offsetMs = 0), changed) }
 
-        state.value = readyState()
+        state.value = buildReadyState()
 
         compose.onNodeWithText("0으로").assertIsNotEnabled()
     }
@@ -195,13 +195,13 @@ class AudioPreviewScreenTest {
 
     @Test
     fun timingRowShowsTogetherForZero() {
-        show(readyState())
+        show(buildReadyState())
         compose.onNodeWithTag(AudioPreviewTags.TIMING).assertTextContains("동시")
     }
 
     @Test
     fun changeButtonsNameTheirSlot() {
-        val state = show(readyState())
+        val state = show(buildReadyState())
         compose.onNodeWithContentDescription("음성 A 변경").assertHasClickAction()
         compose.onNodeWithContentDescription("음성 B 변경").assertHasClickAction()
 
@@ -212,13 +212,13 @@ class AudioPreviewScreenTest {
 
     @Test
     fun longFileNameKeepsChangeButtonVisible() {
-        show(readyState().copy(trackA = ClipInfo("가".repeat(80) + ".wav", 48_000, 48_000)))
+        show(buildReadyState().copy(trackA = ClipInfo("가".repeat(80) + ".wav", 48_000, 48_000)))
         compose.onNodeWithTag(AudioPreviewTags.SELECT_A).assertIsDisplayed()
     }
 
     @Test
     fun differentRateM4aCanPlayWithWav() {
-        show(readyState().copy(trackB = ClipInfo("B.m4a", 44_100, 44_100)))
+        show(buildReadyState().copy(trackB = ClipInfo("B.m4a", 44_100, 44_100)))
         compose.onNodeWithTag(AudioPreviewTags.SELECT_B).assertIsEnabled()
         compose.onNodeWithTag(AudioPreviewTags.PLAY).assertIsEnabled()
     }
@@ -231,7 +231,7 @@ class AudioPreviewScreenTest {
         compose.runOnIdle { assertEquals(1, sampleRequests) }
         compose.onNodeWithTag(AudioPreviewTags.CREDIT).assertDoesNotExist()
 
-        state.value = readyState().copy(
+        state.value = buildReadyState().copy(
             trackA = ClipInfo("Locus iste · 소프라노", 48_000, 384_000, isSample = true),
         )
 
@@ -251,7 +251,7 @@ class AudioPreviewScreenTest {
 
     @Test
     fun timingSheetContentScrolls() {
-        show(readyState())
+        show(buildReadyState())
         compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
         // Landscape with a large font is taller than the screen; the reset and hint must stay reachable.
         compose.onNode(hasScrollAction() and hasAnyDescendant(hasText("0으로"))).assertExists()
@@ -259,13 +259,13 @@ class AudioPreviewScreenTest {
 
     @Test
     fun timingSheetClosesWhenEditingLocksOrFilesGo() {
-        val state = show(readyState())
+        val state = show(buildReadyState())
         compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
         compose.onNodeWithTag(AudioPreviewTags.OFFSET).assertExists()
 
-        state.value = readyState().copy(phase = PreviewPhase.Playing)
+        state.value = buildReadyState().copy(phase = PreviewPhase.Playing)
         compose.onNodeWithTag(AudioPreviewTags.OFFSET).assertDoesNotExist()
-        state.value = readyState()
+        state.value = buildReadyState()
         compose.onNodeWithTag(AudioPreviewTags.OFFSET).assertDoesNotExist()
 
         compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
@@ -287,14 +287,14 @@ class AudioPreviewScreenTest {
             CompositionLocalProvider(LocalUriHandler provides failing) {
                 HarmonySyncerTheme {
                     AudioPreviewScreen(
-                        readyState().copy(trackA = ClipInfo("Locus iste · 소프라노", 48_000, 384_000, isSample = true)),
+                        buildReadyState().copy(trackA = ClipInfo("Locus iste · 소프라노", 48_000, 384_000, isSample = true)),
                         onSelectA = {}, onSelectB = {}, onSettingsChange = {}, onPlay = {}, onStop = {},
                         onLoadSample = {},
                     )
                 }
             }
         }
-        compose.onNodeWithTag(AudioPreviewTags.CREDIT).assert(clickLabel("데이터셋 페이지 열기")).performClick()
+        compose.onNodeWithTag(AudioPreviewTags.CREDIT).assert(hasClickLabel("데이터셋 페이지 열기")).performClick()
         compose.runOnIdle { assertEquals(1, attempts) }
         compose.onNodeWithTag(AudioPreviewTags.CREDIT).assertExists()
     }
@@ -304,15 +304,15 @@ class AudioPreviewScreenTest {
         val state = show(PreviewUiState())
         compose.onNodeWithText("두 음성을 함께 들어보세요").assert(isHeading())
 
-        state.value = readyState()
+        state.value = buildReadyState()
         compose.onNodeWithText("함께 들을 준비가 됐습니다").assert(isHeading())
         compose.onNodeWithText("음량").assert(isHeading())
         compose.onNodeWithTag(AudioPreviewTags.TIMING).performScrollTo().performClick()
         compose.onNode(hasText("타이밍 맞추기") and isHeading()).assertExists()
         Espresso.pressBack()
 
-        state.value = readyState().copy(phase = PreviewPhase.Rendering)
-        compose.onNodeWithTag(AudioPreviewTags.STOP).assert(clickLabel("정지"))
+        state.value = buildReadyState().copy(phase = PreviewPhase.Rendering)
+        compose.onNodeWithTag(AudioPreviewTags.STOP).assert(hasClickLabel("정지"))
     }
 
     /** `setContent` may run once per test, so tests change the returned state instead. */
@@ -334,17 +334,14 @@ class AudioPreviewScreenTest {
         return state
     }
 
-    private fun readyState() = PreviewUiState(
+    private fun buildReadyState() = PreviewUiState(
         trackA = ClipInfo("A.wav", 48_000, 48_000),
         trackB = ClipInfo("B.wav", 48_000, 48_000),
     )
 
-    private fun clickLabel(label: String) = SemanticsMatcher("onClick label is $label") {
+    private fun hasClickLabel(label: String) = SemanticsMatcher("onClick label is $label") {
         it.config.getOrElseNullable(SemanticsActions.OnClick) { null }?.label == label
     }
-
-    private fun stateDescription(value: String) =
-        SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, value)
 
     private companion object {
         const val LOCK_NOTICE = "재생 중에는 바꿀 수 없습니다. 정지하면 다시 조절할 수 있습니다."

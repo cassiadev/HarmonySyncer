@@ -17,37 +17,37 @@ class M4aImportDeviceTest {
     @Test
     fun monoM4aRetainsItsDurationAndSignal() = runBlocking {
         withFixture("mono-44100.m4a") { file ->
-            val loaded = loader().load(Uri.fromFile(file))
+            val loaded = createLoader().load(Uri.fromFile(file))
             assertEquals(file.name, loaded.name)
             assertEquals(44_100, loaded.clip.sampleRate)
             assertEquals(44_100, loaded.clip.samples.size)
-            assertTrue("Decoded tone is missing", toneAmplitude(loaded.clip, 1_000) > 10_000)
+            assertTrue("Decoded tone is missing", measureToneAmplitude(loaded.clip, 1_000) > 10_000)
         }
     }
 
     @Test
     fun stereoM4aCombinesBothChannelsAtHalfGain() = runBlocking {
         withFixture("stereo-48000.m4a") { file ->
-            val clip = loader().load(Uri.fromFile(file)).clip
+            val clip = createLoader().load(Uri.fromFile(file)).clip
             assertEquals(48_000, clip.sampleRate)
             assertEquals(48_000, clip.samples.size)
             // Left contains a 12,000-amplitude 1 kHz tone; right a 6,000-amplitude 3 kHz tone.
-            assertEquals(6_000.0, toneAmplitude(clip, 1_000), 600.0)
-            assertEquals(3_000.0, toneAmplitude(clip, 3_000), 400.0)
+            assertEquals(6_000.0, measureToneAmplitude(clip, 1_000), 600.0)
+            assertEquals(3_000.0, measureToneAmplitude(clip, 3_000), 400.0)
         }
     }
 
     @Test
     fun m4aHeaderIsRecognizedWithoutAFileExtension() = runBlocking {
         withFixture("mono-44100.m4a", ".bin") { file ->
-            assertEquals(44_100, loader().load(Uri.fromFile(file)).clip.samples.size)
+            assertEquals(44_100, createLoader().load(Uri.fromFile(file)).clip.samples.size)
         }
     }
 
     @Test
     fun exactlySixtySecondsOfM4aIsAccepted() = runBlocking {
         withFixture("sixty-seconds.m4a") { file ->
-            val clip = loader().load(Uri.fromFile(file)).clip
+            val clip = createLoader().load(Uri.fromFile(file)).clip
             assertEquals(48_000, clip.sampleRate)
             assertEquals(2_880_000, clip.samples.size)
         }
@@ -56,7 +56,7 @@ class M4aImportDeviceTest {
     @Test
     fun m4aLongerThanSixtySecondsIsRejected() = runBlocking {
         withFixture("over-sixty-seconds.m4a") { file ->
-            val failure = runCatching { loader().load(Uri.fromFile(file)) }.exceptionOrNull()
+            val failure = runCatching { createLoader().load(Uri.fromFile(file)) }.exceptionOrNull()
             assertTrue(failure is IllegalArgumentException)
             assertEquals(AUDIO_TOO_LONG_MESSAGE, failure?.message)
         }
@@ -65,7 +65,7 @@ class M4aImportDeviceTest {
     @Test
     fun unsupportedM4aEncodingExplainsSupportedFormat() = runBlocking {
         withFixture("unsupported-alac.m4a") { file ->
-            val failure = runCatching { loader().load(Uri.fromFile(file)) }.exceptionOrNull()
+            val failure = runCatching { createLoader().load(Uri.fromFile(file)) }.exceptionOrNull()
             assertTrue(failure is IllegalArgumentException)
             assertTrue(failure?.message.orEmpty().contains("AAC"))
         }
@@ -76,9 +76,9 @@ class M4aImportDeviceTest {
         withFixture("mono-44100.m4a") { file ->
             val valid = file.readBytes()
             file.writeBytes(valid.copyOf(100))
-            assertTrue(runCatching { loader().load(Uri.fromFile(file)) }.exceptionOrNull() is IllegalArgumentException)
+            assertTrue(runCatching { createLoader().load(Uri.fromFile(file)) }.exceptionOrNull() is IllegalArgumentException)
             file.writeBytes(valid)
-            assertEquals(44_100, loader().load(Uri.fromFile(file)).clip.samples.size)
+            assertEquals(44_100, createLoader().load(Uri.fromFile(file)).clip.samples.size)
         }
     }
 
@@ -88,10 +88,10 @@ class M4aImportDeviceTest {
             val valid = file.readBytes()
             // Keep the complete metadata but remove the end of the declared audio-data box.
             file.writeBytes(valid.copyOf(6_000))
-            val failure = runCatching { loader().load(Uri.fromFile(file)) }.exceptionOrNull()
+            val failure = runCatching { createLoader().load(Uri.fromFile(file)) }.exceptionOrNull()
             assertTrue("A truncated recording was imported as a shorter clip", failure is IllegalArgumentException)
             file.writeBytes(valid)
-            assertEquals(44_100, loader().load(Uri.fromFile(file)).clip.samples.size)
+            assertEquals(44_100, createLoader().load(Uri.fromFile(file)).clip.samples.size)
         }
     }
 
@@ -99,13 +99,13 @@ class M4aImportDeviceTest {
     fun m4aLargerThanFileLimitIsRejectedBeforeDecoding() = runBlocking {
         withFixture("mono-44100.m4a") { file ->
             RandomAccessFile(file, "rw").use { it.setLength(32L * 1_024 * 1_024 + 1) }
-            val failure = runCatching { loader().load(Uri.fromFile(file)) }.exceptionOrNull()
+            val failure = runCatching { createLoader().load(Uri.fromFile(file)) }.exceptionOrNull()
             assertTrue(failure is IllegalArgumentException)
             assertEquals(AUDIO_TOO_LARGE_MESSAGE, failure?.message)
         }
     }
 
-    private fun loader() = AudioFileLoader(InstrumentationRegistry.getInstrumentation().targetContext.contentResolver)
+    private fun createLoader() = AudioFileLoader(InstrumentationRegistry.getInstrumentation().targetContext.contentResolver)
 
     private suspend fun withFixture(name: String, suffix: String = ".m4a", block: suspend (File) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
@@ -120,7 +120,7 @@ class M4aImportDeviceTest {
         }
     }
 
-    private fun toneAmplitude(clip: PcmClip, frequency: Int): Double {
+    private fun measureToneAmplitude(clip: PcmClip, frequency: Int): Double {
         val start = clip.sampleRate / 10
         val end = clip.sampleRate * 9 / 10
         return abs((start until end).sumOf {

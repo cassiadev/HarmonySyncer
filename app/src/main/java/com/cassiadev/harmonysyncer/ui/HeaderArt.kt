@@ -79,14 +79,14 @@ fun PairRibbon(modifier: Modifier = Modifier) {
         AudioTile(a, tilt = -9f)
         Canvas(modifier = Modifier.size(width = 84.dp, height = 50.dp)) {
             val stroke = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
-            fun ribbon(highFirst: Boolean) = Path().apply {
+            fun buildRibbon(highFirst: Boolean) = Path().apply {
                 val first = if (highFirst) size.height * 0.1f else size.height * 0.9f
                 val second = size.height - first
                 moveTo(0f, size.height / 2)
                 cubicTo(size.width * 0.3f, first, size.width * 0.7f, second, size.width, size.height / 2)
             }
-            drawPath(ribbon(highFirst = true), a, style = stroke)
-            drawPath(ribbon(highFirst = false), b, style = stroke)
+            drawPath(buildRibbon(highFirst = true), a, style = stroke)
+            drawPath(buildRibbon(highFirst = false), b, style = stroke)
         }
         AudioTile(b, tilt = 9f)
     }

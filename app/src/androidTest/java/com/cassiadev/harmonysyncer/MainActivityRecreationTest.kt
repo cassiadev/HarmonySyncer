@@ -7,13 +7,12 @@ import android.net.Uri
 import android.view.WindowManager
 import androidx.lifecycle.Lifecycle
 import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
@@ -32,7 +31,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.cassiadev.harmonysyncer.audio.AudioPreviewController
 import com.cassiadev.harmonysyncer.audio.LoadedAudioFile
 import com.cassiadev.harmonysyncer.audio.PcmClip
-import com.cassiadev.harmonysyncer.audio.wavBytes
+import com.cassiadev.harmonysyncer.audio.buildWavBytes
 import com.cassiadev.harmonysyncer.ui.AudioPreviewTags
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -59,7 +58,7 @@ class MainActivityRecreationTest {
     @Before
     fun stubFilePicker() {
         wav = File.createTempFile("recreation-", ".wav", context.cacheDir)
-        wav.writeBytes(wavBytes(ShortArray(4_800), 48_000))
+        wav.writeBytes(buildWavBytes(ShortArray(4_800), 48_000))
         Intents.init()
         intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(
             Instrumentation.ActivityResult(Activity.RESULT_OK, Intent().setData(Uri.fromFile(wav))),
@@ -89,7 +88,7 @@ class MainActivityRecreationTest {
             compose.onNodeWithTag(AudioPreviewTags.NAME_A).assertTextEquals(wav.name)
             compose.onNodeWithTag(AudioPreviewTags.NAME_B).assertTextEquals(wav.name)
             compose.onNodeWithTag(AudioPreviewTags.VOLUME_B)
-                .assert(stateDescription(context.getString(R.string.volume_value, 0)))
+                .assert(hasStateDescription(context.getString(R.string.volume_value, 0)))
             compose.onNodeWithTag(AudioPreviewTags.TIMING)
                 .assertTextContains(context.getString(R.string.offset_value, "+100"))
             compose.onNodeWithTag(AudioPreviewTags.PLAY).performScrollTo().assertIsEnabled()
@@ -107,7 +106,7 @@ class MainActivityRecreationTest {
             scenario.recreate()
 
             val offset = context.getString(R.string.offset_value, "-40")
-            compose.onNodeWithTag(AudioPreviewTags.OFFSET).assert(stateDescription(offset))
+            compose.onNodeWithTag(AudioPreviewTags.OFFSET).assert(hasStateDescription(offset))
             Espresso.pressBack()
             compose.onNodeWithTag(AudioPreviewTags.TIMING).assertTextContains(offset)
         }
@@ -136,7 +135,7 @@ class MainActivityRecreationTest {
             scenario.recreate()
 
             compose.waitUntilExactlyOneExists(locked, 5_000)
-            loading.complete(LoadedAudioFile("late.wav", silence()))
+            loading.complete(LoadedAudioFile("late.wav", buildSilence()))
             compose.waitUntilExactlyOneExists(hasTestTag(AudioPreviewTags.NAME_A) and hasText("late.wav"), 5_000)
             compose.waitUntilExactlyOneExists(hasTestTag(AudioPreviewTags.SELECT_B) and isEnabled(), 5_000)
             assertEquals(1, loads.get())
@@ -198,7 +197,7 @@ class MainActivityRecreationTest {
 
     /** Must run before [launch]: the first ViewModel keeps whichever controller it was given. */
     private fun useFakeController(
-        loadFile: suspend (Uri) -> LoadedAudioFile = { LoadedAudioFile(FAKE_NAME, silence()) },
+        loadFile: suspend (Uri) -> LoadedAudioFile = { LoadedAudioFile(FAKE_NAME, buildSilence()) },
         playPreview: suspend (PcmClip) -> Unit = {},
         stopPlayback: () -> Unit = {},
         closePlayback: () -> Unit = {},
@@ -238,10 +237,7 @@ class MainActivityRecreationTest {
         compose.waitUntilExactlyOneExists(hasTestTag(AudioPreviewTags.STOP) and isEnabled(), 5_000)
     }
 
-    private fun silence() = PcmClip(ShortArray(480), 48_000)
-
-    private fun stateDescription(value: String) =
-        SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, value)
+    private fun buildSilence() = PcmClip(ShortArray(480), 48_000)
 
     private companion object {
         const val FAKE_NAME = "fake.wav"

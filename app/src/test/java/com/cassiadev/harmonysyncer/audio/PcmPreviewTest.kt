@@ -16,8 +16,8 @@ class PcmPreviewTest {
     @Test
     fun `positive offset delays B with silence and preserves both ends`() {
         val result = renderPreview(
-            clip(100, 200, 300),
-            clip(400, 500, 600, 700),
+            buildClip(100, 200, 300),
+            buildClip(400, 500, 600, 700),
             MixSettings(offsetMs = 2),
         )
 
@@ -28,8 +28,8 @@ class PcmPreviewTest {
     @Test
     fun `negative offset delays A so B starts earlier without discarding samples`() {
         val result = renderPreview(
-            clip(100, 200, 300, 400),
-            clip(600, 800, 1_000),
+            buildClip(100, 200, 300, 400),
+            buildClip(600, 800, 1_000),
             MixSettings(offsetMs = -2),
         )
 
@@ -38,8 +38,8 @@ class PcmPreviewTest {
 
     @Test
     fun `zero offset matches the existing mixer and preserves its rounding`() {
-        val a = clip(1, -1, 3, -3, Short.MAX_VALUE.toInt(), Short.MIN_VALUE.toInt())
-        val b = clip(0)
+        val a = buildClip(1, -1, 3, -3, Short.MAX_VALUE.toInt(), Short.MIN_VALUE.toInt())
+        val b = buildClip(0)
 
         val result = renderPreview(a, b, MixSettings())
 
@@ -79,8 +79,8 @@ class PcmPreviewTest {
 
     @Test
     fun `volumes apply independently with existing half gain headroom`() {
-        val a = clip(10_000, -10_000)
-        val b = clip(6_000, -6_000)
+        val a = buildClip(10_000, -10_000)
+        val b = buildClip(6_000, -6_000)
 
         assertArrayEquals(shortArrayOf(3_000, -3_000), renderPreview(a, b, MixSettings(volumeA = 0f)).samples)
         assertArrayEquals(shortArrayOf(5_000, -5_000), renderPreview(a, b, MixSettings(volumeB = 0f)).samples)
@@ -90,8 +90,8 @@ class PcmPreviewTest {
 
     @Test
     fun `rendering and preparing do not modify or reuse the source buffers`() {
-        val a = clip(100, 200, 300)
-        val b = clip(400, 500, 600, 700)
+        val a = buildClip(100, 200, 300)
+        val b = buildClip(400, 500, 600, 700)
         val originalA = a.samples.copyOf()
         val originalB = b.samples.copyOf()
 
@@ -110,7 +110,7 @@ class PcmPreviewTest {
 
     @Test
     fun `rejects empty clips and nonpositive rates`() {
-        val valid = clip(100)
+        val valid = buildClip(100)
         val invalid = listOf(
             PcmClip(shortArrayOf(), 1_000),
             PcmClip(shortArrayOf(100), 0),
@@ -163,10 +163,10 @@ class PcmPreviewTest {
         for (volume in invalid) {
             for (settings in listOf(MixSettings(volumeA = volume), MixSettings(volumeB = volume))) {
                 assertThrows(IllegalArgumentException::class.java) {
-                    renderPreview(clip(100), clip(200), settings)
+                    renderPreview(buildClip(100), buildClip(200), settings)
                 }
                 assertThrows(IllegalArgumentException::class.java) {
-                    preparePreview(clip(100), clip(200), settings)
+                    preparePreview(buildClip(100), buildClip(200), settings)
                 }
             }
         }
@@ -175,23 +175,23 @@ class PcmPreviewTest {
     @Test
     fun `accepts the offset limits and rejects offsets outside them`() {
         for (offset in intArrayOf(-300, 300)) {
-            val result = renderPreview(clip(100), clip(200), MixSettings(offsetMs = offset))
+            val result = renderPreview(buildClip(100), buildClip(200), MixSettings(offsetMs = offset))
             assertEquals(301, result.samples.size)
         }
         for (offset in intArrayOf(-301, 301, Int.MIN_VALUE, Int.MAX_VALUE)) {
             assertThrows(IllegalArgumentException::class.java) {
-                renderPreview(clip(100), clip(200), MixSettings(offsetMs = offset))
+                renderPreview(buildClip(100), buildClip(200), MixSettings(offsetMs = offset))
             }
             assertThrows(IllegalArgumentException::class.java) {
-                preparePreview(clip(100), clip(200), MixSettings(offsetMs = offset))
+                preparePreview(buildClip(100), buildClip(200), MixSettings(offsetMs = offset))
             }
         }
     }
 
     @Test
     fun `supplied onset correction happens before the manual adjustment exactly once`() {
-        val a = clip(9_000, 8_000, 100, 200, 300)
-        val b = clip(7_000, 6_000, 5_000, 400, 500, 600, 700)
+        val a = buildClip(9_000, 8_000, 100, 200, 300)
+        val b = buildClip(7_000, 6_000, 5_000, 400, 500, 600, 700)
 
         val result = preparePreview(a, b, MixSettings(offsetMs = 2), onsetA = 2, onsetB = 3)
 
@@ -200,8 +200,8 @@ class PcmPreviewTest {
 
     @Test
     fun `default zero onsets retain the original leading silence`() {
-        val a = clip(0, 0, 2_000)
-        val b = clip(0, 4_000)
+        val a = buildClip(0, 0, 2_000)
+        val b = buildClip(0, 4_000)
 
         val result = preparePreview(a, b, MixSettings())
 
@@ -275,10 +275,10 @@ class PcmPreviewTest {
     fun `prepare rejects onsets outside either clip`() {
         for (onset in intArrayOf(-1, 2)) {
             assertThrows(IllegalArgumentException::class.java) {
-                preparePreview(clip(100, 200), clip(300, 400), MixSettings(), onsetA = onset)
+                preparePreview(buildClip(100, 200), buildClip(300, 400), MixSettings(), onsetA = onset)
             }
             assertThrows(IllegalArgumentException::class.java) {
-                preparePreview(clip(100, 200), clip(300, 400), MixSettings(), onsetB = onset)
+                preparePreview(buildClip(100, 200), buildClip(300, 400), MixSettings(), onsetB = onset)
             }
         }
     }
@@ -288,21 +288,21 @@ class PcmPreviewTest {
         val later = MixSettings(offsetMs = 2)
         assertArrayEquals(
             shortArrayOf(50, 100, 450, 600, 500),
-            renderPreview(clip(100, 200, 300, 400), clip(600, 800, 1_000), later).samples,
+            renderPreview(buildClip(100, 200, 300, 400), buildClip(600, 800, 1_000), later).samples,
         )
         assertArrayEquals(
             shortArrayOf(50, 100, 450, 600, 500, 0),
-            preparePreview(clip(100, 200, 300, 400), clip(600, 800, 1_000), later).samples,
+            preparePreview(buildClip(100, 200, 300, 400), buildClip(600, 800, 1_000), later).samples,
         )
 
         val earlier = MixSettings(offsetMs = -2)
         assertArrayEquals(
             shortArrayOf(50, 100, 450, 600, 500),
-            renderPreview(clip(600, 800, 1_000), clip(100, 200, 300, 400), earlier).samples,
+            renderPreview(buildClip(600, 800, 1_000), buildClip(100, 200, 300, 400), earlier).samples,
         )
         assertArrayEquals(
             shortArrayOf(50, 100, 450, 600, 500, 0),
-            preparePreview(clip(600, 800, 1_000), clip(100, 200, 300, 400), earlier).samples,
+            preparePreview(buildClip(600, 800, 1_000), buildClip(100, 200, 300, 400), earlier).samples,
         )
     }
 
@@ -325,7 +325,7 @@ class PcmPreviewTest {
         // Equal rates skip resampling, so only the mixing loop can see the request.
         var checks = 0
         assertThrows(CancellationException::class.java) {
-            preparePreview(clip(100, 200), clip(300), MixSettings()) {
+            preparePreview(buildClip(100, 200), buildClip(300), MixSettings()) {
                 checks++
                 throw CancellationException("stopped")
             }
@@ -359,6 +359,6 @@ class PcmPreviewTest {
         assertEquals("음원의 샘플레이트는 1~192,000Hz여야 합니다.", error.message)
     }
 
-    private fun clip(vararg samples: Int): PcmClip =
+    private fun buildClip(vararg samples: Int): PcmClip =
         PcmClip(ShortArray(samples.size) { samples[it].toShort() }, 1_000)
 }
