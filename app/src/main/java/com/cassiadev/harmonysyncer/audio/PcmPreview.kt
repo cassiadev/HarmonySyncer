@@ -76,11 +76,29 @@ fun preparePreview(
     )
 }
 
-private fun validatePreviewInputs(a: PcmClip, b: PcmClip, settings: MixSettings) {
+/**
+ * Resamples both clips to the preview rate after the renderers' clip checks. Rendering the
+ * result equals rendering the inputs, so a caller may keep it between previews of the same pair.
+ */
+internal fun normalizePreviewRates(
+    a: PcmClip,
+    b: PcmClip,
+    checkActive: () -> Unit = {},
+): Pair<PcmClip, PcmClip> {
+    validatePreviewClips(a, b)
+    val rate = maxOf(a.sampleRate, b.sampleRate)
+    return resamplePcmUp(a, rate, checkActive) to resamplePcmUp(b, rate, checkActive)
+}
+
+private fun validatePreviewClips(a: PcmClip, b: PcmClip) {
     require(a.sampleRate in 1..PCM_MAX_SAMPLE_RATE && b.sampleRate in 1..PCM_MAX_SAMPLE_RATE) {
         "음원의 샘플레이트는 1~192,000Hz여야 합니다."
     }
     require(a.samples.isNotEmpty() && b.samples.isNotEmpty()) { "두 음원에 오디오 데이터가 있어야 합니다." }
+}
+
+private fun validatePreviewInputs(a: PcmClip, b: PcmClip, settings: MixSettings) {
+    validatePreviewClips(a, b)
     require(settings.volumeA.isFinite() && settings.volumeA in 0f..1f) {
         "A 음량은 0~100%로 설정해 주세요."
     }

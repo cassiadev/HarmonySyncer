@@ -333,6 +333,32 @@ class PcmPreviewTest {
         assertEquals(1, checks)
     }
 
+    @Test
+    fun `previews from normalized clips equal previews from the original clips`() {
+        val a = PcmClip(ShortArray(441) { (sin(it * 0.3) * 9_000).roundToInt().toShort() }, 44_100)
+        val b = PcmClip(ShortArray(500) { (sin(it * 0.17) * 7_000).roundToInt().toShort() }, 48_000)
+
+        val (normalizedA, normalizedB) = normalizePreviewRates(a, b)
+
+        assertEquals(48_000, normalizedA.sampleRate)
+        assertTrue(normalizedB === b)
+        for (offsetMs in listOf(-3, 0, 2)) {
+            val settings = MixSettings(volumeA = 0.3f, volumeB = 0.7f, offsetMs = offsetMs)
+            assertArrayEquals(
+                preparePreview(a, b, settings).samples,
+                preparePreview(normalizedA, normalizedB, settings).samples,
+            )
+        }
+    }
+
+    @Test
+    fun `normalizing rejects invalid rates before resampling`() {
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            normalizePreviewRates(PcmClip(shortArrayOf(1), 0), PcmClip(shortArrayOf(1), 48_000))
+        }
+        assertEquals("음원의 샘플레이트는 1~192,000Hz여야 합니다.", error.message)
+    }
+
     private fun clip(vararg samples: Int): PcmClip =
         PcmClip(ShortArray(samples.size) { samples[it].toShort() }, 1_000)
 }
