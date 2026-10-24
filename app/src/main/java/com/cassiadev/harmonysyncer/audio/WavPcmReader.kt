@@ -1,6 +1,8 @@
 package com.cassiadev.harmonysyncer.audio
 
 import java.io.InputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 /**
  * Reads one RIFF/WAVE PCM16 mono clip without closing [input].
@@ -97,9 +99,7 @@ private fun InputStream.readSamples(sampleCount: Int): ShortArray {
     while (sampleOffset < sampleCount) {
         val count = minOf(buffer.size / 2, sampleCount - sampleOffset)
         readFully(buffer, count * 2)
-        for (index in 0 until count) {
-            samples[sampleOffset + index] = buffer.decodeUnsignedShort(index * 2).toShort()
-        }
+        ByteBuffer.wrap(buffer).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(samples, sampleOffset, count)
         sampleOffset += count
     }
     return samples

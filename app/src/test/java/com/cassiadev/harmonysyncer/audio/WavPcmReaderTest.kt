@@ -5,6 +5,8 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.SequenceInputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,6 +24,15 @@ class WavPcmReaderTest {
             assertEquals(rate, clip.sampleRate)
             assertArrayEquals(samples, clip.samples)
         }
+    }
+
+    @Test
+    fun `decodes samples from fixed little endian bytes`() {
+        // Written by hand so a byte order mistake shared with buildDataChunk cannot cancel out.
+        val data = byteArrayOf(0x01, 0x00, 0x00, 0x80.toByte(), 0xff.toByte(), 0x7f, 0x34, 0x12)
+        val clip = readWavPcm16(buildWave(buildFormatChunk(), buildChunk("data", data)).inputStream())
+
+        assertArrayEquals(shortArrayOf(1, Short.MIN_VALUE, Short.MAX_VALUE, 0x1234), clip.samples)
     }
 
     @Test
@@ -313,7 +324,8 @@ class WavPcmReaderTest {
 
     private fun buildDataChunk(samples: ShortArray): ByteArray = buildChunk(
         "data",
-        ByteArrayOutputStream().apply { samples.forEach { write(encodeU16(it.toInt())) } }.toByteArray(),
+        ByteBuffer.allocate(samples.size * Short.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+            .apply { asShortBuffer().put(samples) }.array(),
     )
 
     private fun buildFormatChunk(
