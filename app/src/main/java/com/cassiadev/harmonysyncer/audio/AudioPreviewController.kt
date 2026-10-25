@@ -110,10 +110,10 @@ class AudioPreviewController internal constructor(
 
     /** Also permits loaders that do not use Android URIs, including JVM lifecycle tests. */
     internal fun selectFile(slot: TrackSlot, load: suspend () -> LoadedAudioFile) =
-        load(PreviewPhase.Loading(slot), failedSlot = slot) { listOf(slot to load()) }
+        startLoad(PreviewPhase.Loading(slot), failedSlot = slot) { listOf(slot to load()) }
 
     /** Fills A with the bundled soprano and B with the alto, like choosing both files at once. */
-    fun loadSample() = load(PreviewPhase.LoadingSample, failedSlot = null) {
+    fun loadSample() = startLoad(PreviewPhase.LoadingSample, failedSlot = null) {
         val (a, b) = loadSamplePair()
         listOf(TrackSlot.A to a, TrackSlot.B to b)
     }
@@ -122,7 +122,7 @@ class AudioPreviewController internal constructor(
      * Runs one load at a time. Slots change only after every file loaded; a failure keeps the
      * previous clips and reports [failedSlot] with the error.
      */
-    private fun load(
+    private fun startLoad(
         phase: PreviewPhase,
         failedSlot: TrackSlot?,
         block: suspend () -> List<Pair<TrackSlot, LoadedAudioFile>>,
