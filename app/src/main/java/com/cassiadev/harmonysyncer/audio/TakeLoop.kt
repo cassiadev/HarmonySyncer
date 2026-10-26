@@ -11,12 +11,14 @@ class RecordedTake(val clip: PcmClip, val stopReason: TakeStopReason, val draft:
  * Reads microphone chunks through [read] into one buffer and into [draft] until [shouldStop] or
  * [isSilenced] turns true, [maxFrames] fill the buffer, or [read] fails. A failure before the first
  * frame means the microphone never delivered audio: the draft is removed and nothing is returned.
+ * On a stop request, [readAvailable] (non-blocking) collects audio already captured but not yet read.
  */
 fun readTake(
     sampleRate: Int,
     maxFrames: Int,
     chunkFrames: Int,
     read: (buffer: ShortArray, offset: Int, count: Int) -> Int,
+    readAvailable: (buffer: ShortArray, offset: Int, count: Int) -> Int,
     shouldStop: () -> Boolean,
     isSilenced: () -> Boolean,
     draft: RecordingDraft?,
@@ -41,7 +43,15 @@ fun readTake(
     try {
         val reason = run {
             while (frames < maxFrames) {
-                if (shouldStop()) return@run TakeStopReason.Requested
+                if (shouldStop()) {
+                    // A slow draft write may leave much of the time before the stop in the microphone buffer.
+                    val tail = readAvailable(buffer, frames, maxFrames - frames)
+                    if (tail > 0) {
+                        draft?.append(buffer, frames, tail)
+                        frames += tail
+                    }
+                    return@run TakeStopReason.Requested
+                }
                 // Silenced from the start usually means another app holds the microphone (Android 10+).
                 if (isSilenced()) {
                     if (frames > 0) return@run TakeStopReason.Interrupted

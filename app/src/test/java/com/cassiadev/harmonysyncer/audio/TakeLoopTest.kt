@@ -13,10 +13,24 @@ import org.junit.rules.TemporaryFolder
 class TakeLoopTest {
     @get:Rule val folder = TemporaryFolder()
 
-    /** Fills each requested chunk with consecutive frame numbers and records the requested counts. */
-    private class FakeMicrophone(private val failAt: Int = -1, private val error: Int = -3) {
+    /**
+     * Fills each requested chunk with consecutive frame numbers and records the requested counts.
+     * [available] frames wait in its buffer for a non-blocking read, as audio captured during a slow write would.
+     */
+    private class FakeMicrophone(
+        private val failAt: Int = -1,
+        private val error: Int = -3,
+        private var available: Int = 0,
+    ) {
         val counts = mutableListOf<Int>()
         private var next: Short = 0
+
+        fun readAvailable(buffer: ShortArray, offset: Int, count: Int): Int {
+            val frames = minOf(available, count)
+            for (index in 0 until frames) buffer[offset + index] = next++
+            available -= frames
+            return frames
+        }
 
         fun read(buffer: ShortArray, offset: Int, count: Int): Int {
             if (counts.size == failAt) return error
@@ -40,7 +54,17 @@ class TakeLoopTest {
         maxFrames: Int = 1_000,
         chunkFrames: Int = 10,
         onProgress: (Long) -> Unit = {},
-    ) = readTake(sampleRate, maxFrames, chunkFrames, microphone::read, shouldStop, isSilenced, draft, onProgress)
+    ) = readTake(
+        sampleRate,
+        maxFrames,
+        chunkFrames,
+        microphone::read,
+        microphone::readAvailable,
+        shouldStop,
+        isSilenced,
+        draft,
+        onProgress,
+    )
 
     @Test
     fun `stops when asked and keeps every frame in the draft`() {
@@ -52,6 +76,24 @@ class TakeLoopTest {
         assertArrayEquals(ShortArray(20) { it.toShort() }, take.clip.samples)
         assertEquals(8_000, take.clip.sampleRate)
         assertArrayEquals(take.clip.samples, checkNotNull(draft.loadClip()).samples)
+    }
+
+    @Test
+    fun `stopping keeps what the microphone already captured`() {
+        val draft = checkNotNull(RecordingDrafts(folder.root).create("take", 8_000))
+
+        val take = readWith(FakeMicrophone(available = 30), shouldStop = stopOnCall(3), draft = draft)
+
+        assertEquals(TakeStopReason.Requested, take.stopReason)
+        assertArrayEquals(ShortArray(50) { it.toShort() }, take.clip.samples)
+        assertArrayEquals(take.clip.samples, checkNotNull(draft.loadClip()).samples)
+    }
+
+    @Test
+    fun `the captured tail stops at the time limit`() {
+        val take = readWith(FakeMicrophone(available = 30), shouldStop = stopOnCall(2), maxFrames = 25)
+
+        assertEquals(25, take.clip.samples.size)
     }
 
     @Test

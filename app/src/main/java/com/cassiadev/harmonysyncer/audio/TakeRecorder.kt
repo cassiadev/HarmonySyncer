@@ -54,6 +54,9 @@ class TakeRecorder(private val context: Context) {
                 maxFrames = AUDIO_MAX_DURATION_SECONDS * rate,
                 chunkFrames = rate / 50,
                 read = { buffer, offset, count -> record.read(buffer, offset, count) },
+                readAvailable = { buffer, offset, count ->
+                    record.read(buffer, offset, count, AudioRecord.READ_NON_BLOCKING)
+                },
                 shouldStop = shouldStop,
                 isSilenced = silenced::get,
                 draft = openDraft(rate),
