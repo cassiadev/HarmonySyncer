@@ -7,6 +7,7 @@ import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioRecordingConfiguration
+import android.media.AudioTimestamp
 import android.media.MediaRecorder
 import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
@@ -23,11 +24,15 @@ internal fun chooseCaptureBufferBytes(sampleRate: Int, minBufferBytes: Int): Int
 
 /** Records one mono PCM16 take from the microphone through [readTake]. */
 class TakeRecorder(private val context: Context) {
-    /** Blocking; call on an IO thread. Throws [IllegalStateException] with a user message if it cannot record. */
+    /**
+     * Blocking; call on an IO thread. Throws [IllegalStateException] with a user message if it cannot record.
+     * With an [anchor], completes its stamp from the capture timestamp and keeps only frames from its first frame.
+     */
     fun record(
         openDraft: (sampleRate: Int) -> RecordingDraft?,
         shouldStop: () -> Boolean,
         onProgress: (elapsedMs: Long) -> Unit,
+        anchor: TakeAnchor? = null,
     ): RecordedTake {
         // The screen asks first; this guards any other caller.
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -49,6 +54,9 @@ class TakeRecorder(private val context: Context) {
             check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { MICROPHONE_UNAVAILABLE_MESSAGE }
             record.activeRecordingConfiguration?.let { silenced.report(it.isClientSilenced) }
             val rate = record.sampleRate
+            val timestamp = AudioTimestamp()
+            var wait: TimestampWait? = null
+            var firstRead: FrameTime? = null
             return readTake(
                 sampleRate = rate,
                 maxFrames = AUDIO_MAX_DURATION_SECONDS * rate,
@@ -61,6 +69,22 @@ class TakeRecorder(private val context: Context) {
                 isSilenced = { silenced.wasSilenced },
                 draft = openDraft(rate),
                 onProgress = onProgress,
+                firstFrame = if (anchor == null) ({ 0L }) else ({ anchor.firstFrame }),
+                onRead = onRead@{ inputFrames ->
+                    if (anchor == null || anchor.stamp.isCompleted) return@onRead
+                    val now = System.nanoTime()
+                    // Fallback: the newest frame read was captured about when the first read returned.
+                    val fallback = firstRead ?: FrameTime(inputFrames, now).also { firstRead = it }
+                    val reading = wait ?: TimestampWait(now).also { wait = it }
+                    val read = if (record.getTimestamp(timestamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) {
+                        FrameTime(timestamp.framePosition, timestamp.nanoTime)
+                    } else {
+                        null
+                    }
+                    reading.offer(read, now, fallback)?.let { (stamp, measured) ->
+                        anchor.stamp.complete(CaptureStamp(rate, stamp, measured))
+                    }
+                },
             )
         } finally {
             // Either step can throw when the audio service is gone; the microphone must still be released.

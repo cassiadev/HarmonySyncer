@@ -54,6 +54,8 @@ class TakeLoopTest {
         maxFrames: Int = 1_000,
         chunkFrames: Int = 10,
         onProgress: (Long) -> Unit = {},
+        firstFrame: () -> Long? = { 0L },
+        onRead: (Long) -> Unit = {},
     ) = readTake(
         sampleRate,
         maxFrames,
@@ -64,7 +66,74 @@ class TakeLoopTest {
         isSilenced,
         draft,
         onProgress,
+        firstFrame = firstFrame,
+        onRead = onRead,
     )
+
+    private fun frames(range: LongRange) = ShortArray(range.count()) { (range.first + it).toShort() }
+
+    @Test
+    fun `drops frames before the first frame in buffer and draft`() {
+        val draft = checkNotNull(RecordingDrafts(folder.root).create("take", 8_000))
+
+        val take = readWith(FakeMicrophone(), shouldStop = stopOnCall(7), draft = draft, firstFrame = { 25L })
+
+        assertArrayEquals(frames(25L..59L), take.clip.samples)
+        assertArrayEquals(take.clip.samples, checkNotNull(draft.loadClip()).samples)
+    }
+
+    @Test
+    fun `drops everything until the first frame is decided`() {
+        var reads = 0
+        val take = readWith(
+            FakeMicrophone(),
+            shouldStop = stopOnCall(7),
+            onRead = { reads++ },
+            firstFrame = { if (reads <= 3) null else 40L },
+        )
+
+        assertArrayEquals(frames(40L..59L), take.clip.samples)
+    }
+
+    @Test
+    fun `stop before the first frame keeps nothing`() {
+        val take = readWith(FakeMicrophone(), shouldStop = stopOnCall(4), firstFrame = { null })
+
+        assertEquals(0, take.clip.samples.size)
+        assertEquals(TakeStopReason.Requested, take.stopReason)
+    }
+
+    @Test
+    fun `elapsed time and limit count kept frames`() {
+        val progress = mutableListOf<Long>()
+
+        val take = readWith(FakeMicrophone(), maxFrames = 50, firstFrame = { 100L }, onProgress = { progress += it })
+
+        assertArrayEquals(frames(100L..149L), take.clip.samples)
+        assertEquals(TakeStopReason.TimeLimit, take.stopReason)
+        assertEquals(50L * 1_000 / 8_000, progress.last())
+    }
+
+    @Test
+    fun `reports input frames after each read`() {
+        val inputs = mutableListOf<Long>()
+
+        readWith(FakeMicrophone(), shouldStop = stopOnCall(4), onRead = { inputs += it })
+
+        assertEquals(listOf(10L, 20L, 30L), inputs)
+    }
+
+    @Test
+    fun `interruption before the first frame returns an empty take`() {
+        val microphone = FakeMicrophone()
+        val silenced = readWith(microphone, isSilenced = { microphone.counts.size >= 3 }, firstFrame = { null })
+        assertEquals(0, silenced.clip.samples.size)
+        assertEquals(TakeStopReason.Interrupted, silenced.stopReason)
+
+        val failing = readWith(FakeMicrophone(failAt = 3), firstFrame = { null })
+        assertEquals(0, failing.clip.samples.size)
+        assertEquals(TakeStopReason.Interrupted, failing.stopReason)
+    }
 
     @Test
     fun `stops when asked and keeps every frame in the draft`() {
