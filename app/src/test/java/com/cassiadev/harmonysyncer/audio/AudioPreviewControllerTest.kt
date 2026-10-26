@@ -621,6 +621,49 @@ class AudioPreviewControllerTest {
         assertFalse(File(folder.root, "empty@48000.pcm").exists())
     }
 
+    /** Records [samples] frames into A with a 120 BPM, 4-beat count-in: 96 000 frames at 48 kHz. */
+    private suspend fun TestScope.recordCountInTake(samples: Int, reason: TakeStopReason, draftName: String): FakeAudioHarness {
+        val harness = FakeAudioHarness(this, metronome = MetronomeSettings(useForRecording = true, clickOn = false))
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        val draft = buildDraft(draftName, intact = true)
+        harness.anchoredRecordBlock = { _, _, _, _ -> RecordedTake(PcmClip(ShortArray(samples), 48_000), reason, draft) }
+        harness.controller.startRecording(TrackSlot.A)
+        advanceUntilIdle()
+        return harness
+    }
+
+    @Test
+    fun `stop during count-in discards the take`() = runTest {
+        val harness = recordCountInTake(95_999, TakeStopReason.Requested, "short")
+
+        assertTrue(harness.savedRecordings.isEmpty())
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        assertFalse(File(folder.root, "short@48000.pcm").exists())
+        assertEquals(null, harness.controller.state.notice)
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `interruption during count-in also discards`() = runTest {
+        val harness = recordCountInTake(95_999, TakeStopReason.Interrupted, "cut")
+
+        assertTrue(harness.savedRecordings.isEmpty())
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        assertFalse(File(folder.root, "cut@48000.pcm").exists())
+        assertEquals(null, harness.controller.state.notice)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `take as long as the count-in is saved`() = runTest {
+        val harness = recordCountInTake(96_000, TakeStopReason.Requested, "long")
+
+        assertEquals(1, harness.savedRecordings.size)
+        assertEquals("long.wav", harness.controller.state.trackA?.name)
+        harness.controller.close()
+    }
+
     @Test
     fun `recorder failure reports the message`() = runTest {
         val harness = FakeAudioHarness(this)

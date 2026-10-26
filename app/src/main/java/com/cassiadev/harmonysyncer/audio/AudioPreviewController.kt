@@ -304,7 +304,7 @@ class AudioPreviewController internal constructor(
         recordingJob?.start()
     }
 
-    /** Runs on IO; null for a take without samples. Phase changes are posted back to [scope]. */
+    /** Runs on IO; null for a take without samples or shorter than its count-in. Phase changes are posted back to [scope]. */
     private suspend fun recordAndSave(slot: TrackSlot, baseName: String, metronome: MetronomeSettings?): RecordingOutcome? {
         fun updateRecording(change: (PreviewPhase.Recording) -> PreviewPhase.Recording) {
             scope.launch {
@@ -329,7 +329,9 @@ class AudioPreviewController internal constructor(
             ) { start -> updateRecording { it.copy(countInStartNanos = start) } }
         }
         val draft = take.draft
-        if (take.clip.samples.isEmpty()) {
+        // A take that stops before its count-in ends holds no singing: discarded like an empty one (design 2).
+        val countInFrames = metronome?.let { clickFrameAt(it.beatsPerBar.toLong(), it.bpm, take.clip.sampleRate) } ?: 0L
+        if (take.clip.samples.isEmpty() || take.clip.samples.size < countInFrames) {
             draft?.delete()
             draft?.release()
             return null
