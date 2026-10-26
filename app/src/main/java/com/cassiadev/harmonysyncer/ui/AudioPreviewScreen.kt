@@ -217,6 +217,11 @@ fun AudioPreviewScreen(
                 PreviewPhase.LoadingSample -> stringResource(R.string.status_loading_sample)
                 PreviewPhase.Rendering -> stringResource(R.string.status_rendering)
                 PreviewPhase.Playing -> stringResource(R.string.status_playing)
+                is PreviewPhase.Recording -> stringResource(
+                    if (phase.slot == TrackSlot.A) R.string.status_recording_a else R.string.status_recording_b,
+                    formatRecordingElapsed(phase.elapsedMs),
+                )
+                is PreviewPhase.SavingRecording -> stringResource(R.string.status_saving_recording)
                 PreviewPhase.Idle -> if (bothSelected) {
                     stringResource(R.string.status_ready)
                 } else {
@@ -258,6 +263,12 @@ fun AudioPreviewScreen(
     if (timingOpen && bothSelected && state.canEdit) {
         TimingSheet(settings = state.settings, onSettingsChange = onSettingsChange, onDismiss = { timingOpen = false })
     }
+}
+
+/** `m:ss` with ASCII digits in every locale; recordings stop at 60 s. */
+internal fun formatRecordingElapsed(elapsedMs: Long): String {
+    val seconds = elapsedMs / 1_000
+    return "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
 }
 
 /** CC BY 4.0 requires credit wherever the bundled recordings are played. */
