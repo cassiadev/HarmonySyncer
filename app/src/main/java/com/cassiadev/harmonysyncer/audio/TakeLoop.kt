@@ -33,17 +33,24 @@ fun readTake(
             onProgress(elapsedMs)
         }
     }
+    fun failWithoutAudio(): Nothing {
+        draft?.delete()
+        draft?.release()
+        throw IllegalStateException(MICROPHONE_UNAVAILABLE_MESSAGE)
+    }
     try {
         val reason = run {
             while (frames < maxFrames) {
                 if (shouldStop()) return@run TakeStopReason.Requested
-                if (isSilenced()) return@run TakeStopReason.Interrupted
+                // Silenced from the start usually means another app holds the microphone (Android 10+).
+                if (isSilenced()) {
+                    if (frames > 0) return@run TakeStopReason.Interrupted
+                    failWithoutAudio()
+                }
                 val count = read(buffer, frames, minOf(chunkFrames, maxFrames - frames))
                 if (count < 0) {
                     if (frames > 0) return@run TakeStopReason.Interrupted
-                    draft?.delete()
-                    draft?.release()
-                    throw IllegalStateException(MICROPHONE_UNAVAILABLE_MESSAGE)
+                    failWithoutAudio()
                 }
                 // A failed draft write leaves the take in memory only; recording goes on.
                 draft?.append(buffer, frames, count)

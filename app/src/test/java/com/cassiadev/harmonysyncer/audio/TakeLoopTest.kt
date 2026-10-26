@@ -91,6 +91,19 @@ class TakeLoopTest {
     }
 
     @Test
+    fun `silencing before any frame is reported as unavailable`() {
+        val drafts = RecordingDrafts(folder.root)
+        val draft = checkNotNull(drafts.create("take", 8_000))
+
+        val failure = assertThrows(IllegalStateException::class.java) {
+            readWith(FakeMicrophone(), isSilenced = { true }, draft = draft)
+        }
+
+        assertEquals(MICROPHONE_UNAVAILABLE_MESSAGE, failure.message)
+        assertFalse(File(folder.root, "take@8000.pcm").exists())
+    }
+
+    @Test
     fun `read error after frames keeps them`() {
         val take = readWith(FakeMicrophone(failAt = 1))
 
