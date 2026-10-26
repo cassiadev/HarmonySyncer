@@ -11,6 +11,14 @@ import java.io.IOException
 internal fun chooseRecordingRelativePath(sdkInt: Int): String =
     if (sdkInt >= Build.VERSION_CODES.S) "Recordings/HarmonySyncer/" else "Music/HarmonySyncer/"
 
+/**
+ * A publish that did not update exactly our one row (0: the row is gone, -1: the provider was unreachable)
+ * leaves the file hidden, so it must count as a failed save and the caller must keep its draft.
+ */
+internal fun requirePublishedRow(rowsUpdated: Int) {
+    if (rowsUpdated != 1) throw IOException("녹음 파일을 공개하지 못했습니다.")
+}
+
 /** Publishes recordings to shared storage, where the system file picker can choose them again. */
 class RecordingStore(private val resolver: ContentResolver) {
     /** Blocking; call on an IO thread. A failed save removes its hidden row before rethrowing. */
@@ -27,7 +35,9 @@ class RecordingStore(private val resolver: ContentResolver) {
         try {
             val output = resolver.openOutputStream(uri) ?: throw IOException("녹음 파일을 열지 못했습니다.")
             output.use { it.write(wav) }
-            resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null)
+            requirePublishedRow(
+                resolver.update(uri, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null),
+            )
             return uri
         } catch (failure: Exception) {
             try {
