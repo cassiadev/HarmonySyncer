@@ -134,6 +134,8 @@ class AudioPreviewController internal constructor(
     private var playbackSession = 0L
     private var recordingJob: Job? = null
     private var recoveryJob: Job? = null
+    /** Takes a recovery saved while a take was recording; announced only once the microphone is off. */
+    private var recoveredDuringTake = 0
     // The recorder polls this from its IO thread; only the first request of a take counts.
     @Volatile private var stopRequest: StopRequest? = null
     private var closed = false
@@ -252,6 +254,11 @@ class AudioPreviewController internal constructor(
                 if (!closed) {
                     recordingJob = null
                     state = state.copy(phase = PreviewPhase.Idle)
+                    if (recoveredDuringTake > 0) {
+                        val recovered = buildRecoveredNotice(recoveredDuringTake)
+                        recoveredDuringTake = 0
+                        state = state.copy(notice = listOfNotNull(state.notice, recovered).joinToString(" "))
+                    }
                 }
             }
         }
@@ -315,7 +322,13 @@ class AudioPreviewController internal constructor(
             } catch (_: Exception) {
                 0
             }
-            if (count > 0 && !closed) state = state.copy(notice = buildRecoveredNotice(count))
+            if (count <= 0 || closed) return@launch
+            // TalkBack reads a new notice aloud, which would go into the take through the microphone.
+            if (state.isRecording) {
+                recoveredDuringTake += count
+            } else {
+                state = state.copy(notice = buildRecoveredNotice(count))
+            }
         }
     }
 

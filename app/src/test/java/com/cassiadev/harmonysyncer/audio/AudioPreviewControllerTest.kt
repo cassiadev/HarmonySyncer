@@ -725,6 +725,28 @@ class AudioPreviewControllerTest {
         assertEquals(null, nothing.controller.state.notice)
     }
 
+    @Test
+    fun `a recovery that ends during a take shows its notice after the take`() = runTest {
+        val harness = FakeAudioHarness(this)
+        val recovering = CompletableDeferred<Int>()
+        harness.recoverBlock = { recovering.await() }
+        harness.controller.recoverDrafts()
+        runCurrent()
+        harness.controller.startRecording(TrackSlot.A)
+        runCurrent()
+
+        recovering.complete(1)
+        runCurrent()
+
+        val noticeDuringTake = harness.controller.state.notice
+        // Ends the take even if an assertion fails, so the polling fake recorder cannot hang the test.
+        harness.controller.interruptRecording()
+        advanceUntilIdle()
+        // A notice during a take would be read aloud by TalkBack into the microphone.
+        assertEquals(null, noticeDuringTake)
+        assertEquals("$RECORDING_INTERRUPTED_NOTICE ${buildRecoveredNotice(1)}", harness.controller.state.notice)
+    }
+
     private fun buildDraft(name: String, intact: Boolean): RecordingDraft {
         val draft = checkNotNull(RecordingDrafts(folder.root).create(name, 48_000))
         if (intact) draft.append(shortArrayOf(1, 2), 0, 2)
