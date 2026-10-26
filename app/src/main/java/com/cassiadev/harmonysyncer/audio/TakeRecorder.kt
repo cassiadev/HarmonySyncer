@@ -63,7 +63,8 @@ class TakeRecorder(private val context: Context) {
                 onProgress = onProgress,
             )
         } finally {
-            record.unregisterAudioRecordingCallback(callback)
+            // Either step can throw when the audio service is gone; the microphone must still be released.
+            runCatching { record.unregisterAudioRecordingCallback(callback) }
             runCatching { record.stop() }
             record.release()
         }
