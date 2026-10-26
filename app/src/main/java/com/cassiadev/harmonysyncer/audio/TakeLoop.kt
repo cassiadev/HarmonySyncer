@@ -4,6 +4,19 @@ private const val PROGRESS_STEP_MS = 100L
 
 enum class TakeStopReason { Requested, TimeLimit, Interrupted }
 
+/**
+ * Remembers that a take was silenced at any point. The recording callback may report silenced and then
+ * unsilenced before the reading thread looks again; the take must still stop as interrupted.
+ */
+class SilencingLatch {
+    @Volatile var wasSilenced = false
+        private set
+
+    fun report(silenced: Boolean) {
+        if (silenced) wasSilenced = true
+    }
+}
+
 /** A finished take; [draft] is still owned by the caller, who deletes it once saved and releases it. */
 class RecordedTake(val clip: PcmClip, val stopReason: TakeStopReason, val draft: RecordingDraft?)
 

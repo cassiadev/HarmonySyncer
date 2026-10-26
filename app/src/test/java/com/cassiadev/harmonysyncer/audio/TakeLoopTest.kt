@@ -133,6 +133,18 @@ class TakeLoopTest {
     }
 
     @Test
+    fun `silencing stays reported after it is lifted`() {
+        val latch = SilencingLatch()
+        assertFalse(latch.wasSilenced)
+
+        // Both callbacks can arrive while the reading thread is busy with a slow draft write.
+        latch.report(silenced = true)
+        latch.report(silenced = false)
+
+        assertTrue(latch.wasSilenced)
+    }
+
+    @Test
     fun `silencing before any frame is reported as unavailable`() {
         val drafts = RecordingDrafts(folder.root)
         val draft = checkNotNull(drafts.create("take", 8_000))

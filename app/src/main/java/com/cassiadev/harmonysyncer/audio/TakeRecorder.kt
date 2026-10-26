@@ -10,7 +10,6 @@ import android.media.AudioRecordingConfiguration
 import android.media.MediaRecorder
 import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
-import java.util.concurrent.atomic.AtomicBoolean
 
 // 44.1 kHz is the only capture rate Android guarantees on every device.
 private val RECORDING_SAMPLE_RATES = intArrayOf(48_000, 44_100)
@@ -35,11 +34,12 @@ class TakeRecorder(private val context: Context) {
             throw IllegalStateException(MICROPHONE_DENIED_MESSAGE)
         }
         val record = createAudioRecord() ?: throw IllegalStateException(MICROPHONE_UNAVAILABLE_MESSAGE)
-        val silenced = AtomicBoolean(false)
+        // A new latch per take, so silencing in one take never stops the next.
+        val silenced = SilencingLatch()
         val callback = object : AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: List<AudioRecordingConfiguration>) {
                 configs.firstOrNull { it.clientAudioSessionId == record.audioSessionId }
-                    ?.let { silenced.set(it.isClientSilenced) }
+                    ?.let { silenced.report(it.isClientSilenced) }
             }
         }
         try {
@@ -47,7 +47,7 @@ class TakeRecorder(private val context: Context) {
             record.registerAudioRecordingCallback(context.mainExecutor, callback)
             record.startRecording()
             check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { MICROPHONE_UNAVAILABLE_MESSAGE }
-            if (record.activeRecordingConfiguration?.isClientSilenced == true) silenced.set(true)
+            record.activeRecordingConfiguration?.let { silenced.report(it.isClientSilenced) }
             val rate = record.sampleRate
             return readTake(
                 sampleRate = rate,
@@ -58,7 +58,7 @@ class TakeRecorder(private val context: Context) {
                     record.read(buffer, offset, count, AudioRecord.READ_NON_BLOCKING)
                 },
                 shouldStop = shouldStop,
-                isSilenced = silenced::get,
+                isSilenced = { silenced.wasSilenced },
                 draft = openDraft(rate),
                 onProgress = onProgress,
             )
