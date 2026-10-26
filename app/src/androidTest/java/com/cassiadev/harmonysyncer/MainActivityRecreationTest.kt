@@ -1,5 +1,6 @@
 package com.cassiadev.harmonysyncer
 
+import android.Manifest
 import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
@@ -31,6 +32,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.cassiadev.harmonysyncer.audio.AudioPreviewController
 import com.cassiadev.harmonysyncer.audio.LoadedAudioFile
 import com.cassiadev.harmonysyncer.audio.PcmClip
+import com.cassiadev.harmonysyncer.audio.RECORDING_INTERRUPTED_NOTICE
+import com.cassiadev.harmonysyncer.audio.RecordedTake
+import com.cassiadev.harmonysyncer.audio.TakeStopReason
 import com.cassiadev.harmonysyncer.audio.buildWavBytes
 import com.cassiadev.harmonysyncer.ui.AudioPreviewTags
 import java.io.File
@@ -40,6 +44,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -57,6 +62,8 @@ class MainActivityRecreationTest {
 
     @Before
     fun stubFilePicker() {
+        InstrumentationRegistry.getInstrumentation().uiAutomation
+            .grantRuntimePermission(context.packageName, Manifest.permission.RECORD_AUDIO)
         wav = File.createTempFile("recreation-", ".wav", context.cacheDir)
         wav.writeBytes(buildWavBytes(ShortArray(4_800), 48_000))
         Intents.init()
@@ -195,12 +202,58 @@ class MainActivityRecreationTest {
         }
     }
 
+
+    @Test
+    fun recordingContinuesAcrossRecreation() {
+        val saves = AtomicInteger()
+        useFakeController(recordTake = ::recordUntilStopped, saveRecording = { _, _ -> saves.incrementAndGet() })
+        launch().use { scenario ->
+            compose.onNodeWithTag(AudioPreviewTags.RECORD_A).performScrollTo().performClick()
+            compose.waitUntilExactlyOneExists(hasTestTag(AudioPreviewTags.RECORDING_TIME), 5_000)
+
+            scenario.recreate()
+
+            compose.waitUntilExactlyOneExists(hasTestTag(AudioPreviewTags.RECORDING_TIME), 5_000)
+            compose.onNodeWithTag(AudioPreviewTags.STOP_RECORDING).performClick()
+            compose.waitUntilExactlyOneExists(
+                hasTestTag(AudioPreviewTags.NAME_A) and hasText("HarmonySyncer-A-", substring = true),
+                5_000,
+            )
+            assertEquals(1, saves.get())
+        }
+    }
+
+    @Test
+    fun leavingTheScreenSavesTheRecording() {
+        val saves = AtomicInteger()
+        useFakeController(recordTake = ::recordUntilStopped, saveRecording = { _, _ -> saves.incrementAndGet() })
+        launch().use { scenario ->
+            compose.onNodeWithTag(AudioPreviewTags.RECORD_A).performScrollTo().performClick()
+            compose.waitUntilExactlyOneExists(hasTestTag(AudioPreviewTags.RECORDING_TIME), 5_000)
+
+            scenario.moveToState(Lifecycle.State.CREATED)
+            scenario.moveToState(Lifecycle.State.RESUMED)
+
+            compose.waitUntilExactlyOneExists(hasText(RECORDING_INTERRUPTED_NOTICE), 5_000)
+            assertEquals(1, saves.get())
+        }
+    }
+
+    /** Polls like the real recorder and returns a short take once the controller asks it to stop. */
+    private suspend fun recordUntilStopped(baseName: String, shouldStop: () -> Boolean, onProgress: (Long) -> Unit): RecordedTake {
+        onProgress(0)
+        while (!shouldStop()) delay(10)
+        return RecordedTake(buildSilence(), TakeStopReason.Requested, null)
+    }
+
     /** Must run before [launch]: the first ViewModel keeps whichever controller it was given. */
     private fun useFakeController(
         loadFile: suspend (Uri) -> LoadedAudioFile = { LoadedAudioFile(FAKE_NAME, buildSilence()) },
         playPreview: suspend (PcmClip) -> Unit = {},
         stopPlayback: () -> Unit = {},
         closePlayback: () -> Unit = {},
+        recordTake: suspend (String, () -> Boolean, (Long) -> Unit) -> RecordedTake = { _, _, _ -> error("No recorder") },
+        saveRecording: suspend (String, ByteArray) -> Unit = { _, _ -> },
     ) {
         AudioPreviewViewModel.createController = {
             AudioPreviewController(
@@ -212,6 +265,8 @@ class MainActivityRecreationTest {
                 playPreview = playPreview,
                 stopPlayback = stopPlayback,
                 closePlayback = closePlayback,
+                recordTake = recordTake,
+                saveRecording = saveRecording,
             )
         }
     }

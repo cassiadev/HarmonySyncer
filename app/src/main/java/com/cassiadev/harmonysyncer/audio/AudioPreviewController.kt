@@ -12,7 +12,11 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import java.io.File
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
@@ -21,6 +25,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 enum class TrackSlot { A, B }
+
+private val RECORDING_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+
+/** `HarmonySyncer-A-20261026-153012`; the draft or the saved file adds its extension. */
+internal fun buildRecordingBaseName(slot: TrackSlot, time: LocalDateTime) =
+    "HarmonySyncer-${slot.name}-${time.format(RECORDING_TIME_FORMAT)}"
 
 /** [isSample] marks the bundled harmony sample, whose recordings need a CC BY credit on screen. */
 data class ClipInfo(val name: String, val sampleRate: Int, val frameCount: Int, val isSample: Boolean = false) {
@@ -35,6 +45,10 @@ sealed interface PreviewPhase {
     data object LoadingSample : PreviewPhase
     data object Rendering : PreviewPhase
     data object Playing : PreviewPhase
+    /** Recording into [slot]; [elapsedMs] counts the audio captured so far. */
+    data class Recording(val slot: TrackSlot, val elapsedMs: Long) : PreviewPhase
+    /** Saving the finished take of [slot] to shared storage. */
+    data class SavingRecording(val slot: TrackSlot) : PreviewPhase
 }
 
 data class PreviewUiState(
@@ -45,9 +59,12 @@ data class PreviewUiState(
     val error: String? = null,
     /** Set only while [error] reports a failed file load into this slot. */
     val failedSlot: TrackSlot? = null,
+    /** Information that is not an error, such as a take saved after an interruption. */
+    val notice: String? = null,
 ) {
     val isLoading: Boolean get() = phase is PreviewPhase.Loading || phase == PreviewPhase.LoadingSample
     val isPlaying: Boolean get() = phase == PreviewPhase.Rendering || phase == PreviewPhase.Playing
+    val isRecording: Boolean get() = phase is PreviewPhase.Recording || phase is PreviewPhase.SavingRecording
     val canEdit: Boolean get() = phase == PreviewPhase.Idle
     val canPlay: Boolean
         get() = canEdit && trackA != null && trackB != null
@@ -68,6 +85,12 @@ class AudioPreviewController internal constructor(
     },
     // The identity is always correct: render still resamples clips that were not normalized.
     private val normalize: suspend (PcmClip, PcmClip) -> Pair<PcmClip, PcmClip> = { a, b -> a to b },
+    private val recordTake: suspend (baseName: String, shouldStop: () -> Boolean, onProgress: (Long) -> Unit) -> RecordedTake =
+        { _, _, _ -> error("No recorder in this controller") },
+    private val saveRecording: suspend (displayName: String, wav: ByteArray) -> Unit =
+        { _, _ -> error("No recording store in this controller") },
+    private val recoverRecordings: suspend () -> Int = { 0 },
+    private val currentTime: () -> LocalDateTime = LocalDateTime::now,
 ) {
     constructor(context: Context) : this(createDependencies(context))
 
@@ -88,6 +111,11 @@ class AudioPreviewController internal constructor(
             val context = currentCoroutineContext()
             normalizePreviewRates(a, b, checkActive = { context.ensureActive() })
         },
+        recordTake = { baseName, shouldStop, onProgress ->
+            dependencies.recorder.record({ rate -> dependencies.drafts.create(baseName, rate) }, shouldStop, onProgress)
+        },
+        saveRecording = { name, wav -> dependencies.store.save(name, wav) },
+        recoverRecordings = { saveLeftoverDrafts(dependencies.drafts) { name, wav -> dependencies.store.save(name, wav) } },
     )
 
     var state by mutableStateOf(PreviewUiState())
@@ -104,16 +132,31 @@ class AudioPreviewController internal constructor(
     private var loadJob: Job? = null
     private var playbackJob: Job? = null
     private var playbackSession = 0L
+    private var recordingJob: Job? = null
+    private var recoveryJob: Job? = null
+    /** Takes a recovery saved while a take was recording; announced only once the microphone is off. */
+    private var recoveredDuringTake = 0
+    // The recorder polls this from its IO thread; only the first request of a take counts.
+    @Volatile private var stopRequest: StopRequest? = null
     private var closed = false
+
+    private enum class StopRequest { User, Interruption }
+
+    private class RecordingOutcome(
+        val file: LoadedAudioFile,
+        val stopReason: TakeStopReason,
+        val saved: Boolean,
+        val draftIntact: Boolean,
+    )
 
     fun selectFile(slot: TrackSlot, uri: Uri) = selectFile(slot) { loadFile(uri) }
 
     /** Also permits loaders that do not use Android URIs, including JVM lifecycle tests. */
     internal fun selectFile(slot: TrackSlot, load: suspend () -> LoadedAudioFile) =
-        load(PreviewPhase.Loading(slot), failedSlot = slot) { listOf(slot to load()) }
+        startLoad(PreviewPhase.Loading(slot), failedSlot = slot) { listOf(slot to load()) }
 
     /** Fills A with the bundled soprano and B with the alto, like choosing both files at once. */
-    fun loadSample() = load(PreviewPhase.LoadingSample, failedSlot = null) {
+    fun loadSample() = startLoad(PreviewPhase.LoadingSample, failedSlot = null) {
         val (a, b) = loadSamplePair()
         listOf(TrackSlot.A to a, TrackSlot.B to b)
     }
@@ -122,42 +165,19 @@ class AudioPreviewController internal constructor(
      * Runs one load at a time. Slots change only after every file loaded; a failure keeps the
      * previous clips and reports [failedSlot] with the error.
      */
-    private fun load(
+    private fun startLoad(
         phase: PreviewPhase,
         failedSlot: TrackSlot?,
         block: suspend () -> List<Pair<TrackSlot, LoadedAudioFile>>,
     ) {
         if (closed || !state.canEdit) return
-        state = state.copy(phase = phase, error = null, failedSlot = null)
+        state = state.copy(phase = phase, error = null, failedSlot = null, notice = null)
         loadJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val loaded = withContext(ioDispatcher) { block() }
                 ensureActive()
                 if (closed) return@launch
-                normalizedClips = null
-                for ((slot, file) in loaded) {
-                    val info = ClipInfo(
-                        file.name,
-                        file.clip.sampleRate,
-                        file.clip.samples.size,
-                        isSample = phase == PreviewPhase.LoadingSample,
-                    )
-                    when (slot) {
-                        TrackSlot.A -> {
-                            clipA = file.clip
-                            state = state.copy(trackA = info)
-                        }
-                        TrackSlot.B -> {
-                            clipB = file.clip
-                            state = state.copy(trackB = info)
-                        }
-                    }
-                }
-                state = state.copy(
-                    settings = state.settings.copy(offsetMs = 0),
-                    error = null,
-                    failedSlot = null,
-                )
+                applyLoaded(loaded, isSample = phase == PreviewPhase.LoadingSample)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: Exception) {
@@ -177,6 +197,141 @@ class AudioPreviewController internal constructor(
         loadJob?.start()
     }
 
+    /** Replaces the given slots as a file selection does: the shared-rate cache and B's offset reset. */
+    private fun applyLoaded(loaded: List<Pair<TrackSlot, LoadedAudioFile>>, isSample: Boolean) {
+        normalizedClips = null
+        for ((slot, file) in loaded) {
+            val info = ClipInfo(file.name, file.clip.sampleRate, file.clip.samples.size, isSample = isSample)
+            when (slot) {
+                TrackSlot.A -> {
+                    clipA = file.clip
+                    state = state.copy(trackA = info)
+                }
+                TrackSlot.B -> {
+                    clipB = file.clip
+                    state = state.copy(trackB = info)
+                }
+            }
+        }
+        state = state.copy(
+            settings = state.settings.copy(offsetMs = 0),
+            error = null,
+            failedSlot = null,
+        )
+    }
+
+    /**
+     * Records into [slot] without accompaniment, saves the take to shared storage and then puts it in
+     * the slot. Recording and saving run under [NonCancellable] so [close] (leaving the app) still saves.
+     */
+    fun startRecording(slot: TrackSlot) {
+        if (closed || !state.canEdit) return
+        val baseName = buildRecordingBaseName(slot, currentTime())
+        stopRequest = null
+        state = state.copy(phase = PreviewPhase.Recording(slot, 0), error = null, failedSlot = null, notice = null)
+        recordingJob = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                val outcome = withContext(ioDispatcher + NonCancellable) { recordAndSave(slot, baseName) }
+                if (closed || outcome == null) return@launch
+                applyLoaded(listOf(slot to outcome.file), isSample = false)
+                state = if (!outcome.saved) {
+                    state.copy(error = if (outcome.draftIntact) RECORDING_SAVE_RETRY_MESSAGE else RECORDING_SAVE_LOST_MESSAGE)
+                } else {
+                    state.copy(
+                        notice = when {
+                            outcome.stopReason == TakeStopReason.TimeLimit -> RECORDING_TIME_LIMIT_NOTICE
+                            outcome.stopReason == TakeStopReason.Interrupted ||
+                                stopRequest == StopRequest.Interruption -> RECORDING_INTERRUPTED_NOTICE
+                            else -> null
+                        },
+                    )
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: Exception) {
+                if (!closed) state = state.copy(error = failure.message ?: MICROPHONE_UNAVAILABLE_MESSAGE, failedSlot = null)
+            } finally {
+                if (!closed) {
+                    recordingJob = null
+                    state = state.copy(phase = PreviewPhase.Idle)
+                    if (recoveredDuringTake > 0) {
+                        val recovered = buildRecoveredNotice(recoveredDuringTake)
+                        recoveredDuringTake = 0
+                        state = state.copy(notice = listOfNotNull(state.notice, recovered).joinToString(" "))
+                    }
+                }
+            }
+        }
+        recordingJob?.start()
+    }
+
+    /** Runs on IO; null for a take without samples. Phase changes are posted back to [scope]. */
+    private suspend fun recordAndSave(slot: TrackSlot, baseName: String): RecordingOutcome? {
+        val take = recordTake(baseName, { stopRequest != null }) { elapsedMs ->
+            scope.launch {
+                val phase = state.phase
+                if (phase is PreviewPhase.Recording && phase.slot == slot) {
+                    state = state.copy(phase = PreviewPhase.Recording(slot, elapsedMs))
+                }
+            }
+        }
+        val draft = take.draft
+        if (take.clip.samples.isEmpty()) {
+            draft?.delete()
+            draft?.release()
+            return null
+        }
+        scope.launch {
+            if (state.phase is PreviewPhase.Recording) state = state.copy(phase = PreviewPhase.SavingRecording(slot))
+        }
+        val name = draft?.displayName ?: "$baseName.wav"
+        val saved = try {
+            saveRecording(name, encodeWavPcm16(take.clip))
+            true
+        } catch (_: Exception) {
+            false
+        }
+        // A failed save keeps the draft for the next recovery.
+        if (saved) draft?.delete()
+        draft?.release()
+        return RecordingOutcome(LoadedAudioFile(name, take.clip), take.stopReason, saved, draft?.isIntact == true)
+    }
+
+    fun stopRecording() = requestRecordingStop(StopRequest.User)
+
+    /** Leaving the app stops the take like the stop button, but the saved take gets a notice. */
+    fun interruptRecording() = requestRecordingStop(StopRequest.Interruption)
+
+    private fun requestRecordingStop(request: StopRequest) {
+        if (state.phase is PreviewPhase.Recording && stopRequest == null) stopRequest = request
+    }
+
+    fun reportMicrophoneDenied() {
+        if (closed) return
+        state = state.copy(error = MICROPHONE_DENIED_MESSAGE, failedSlot = null, notice = null)
+    }
+
+    /** Saves drafts left by an earlier process or a failed save; one recovery runs at a time. */
+    fun recoverDrafts() {
+        if (closed || recoveryJob?.isActive == true) return
+        recoveryJob = scope.launch {
+            val count = try {
+                withContext(ioDispatcher) { recoverRecordings() }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                0
+            }
+            if (count <= 0 || closed) return@launch
+            // TalkBack reads a new notice aloud, which would go into the take through the microphone.
+            if (state.isRecording) {
+                recoveredDuringTake += count
+            } else {
+                state = state.copy(notice = buildRecoveredNotice(count))
+            }
+        }
+    }
+
     fun updateSettings(settings: MixSettings) {
         if (closed || !state.canEdit) return
         if (!settings.volumeA.isFinite() || !settings.volumeB.isFinite() ||
@@ -186,7 +341,7 @@ class AudioPreviewController internal constructor(
             state = state.copy(error = "음량은 0~100%, B 추가 이동은 −300~+300밀리초로 설정해 주세요.", failedSlot = null)
             return
         }
-        state = state.copy(settings = settings, error = null, failedSlot = null)
+        state = state.copy(settings = settings, error = null, failedSlot = null, notice = null)
     }
 
     fun play() {
@@ -197,7 +352,7 @@ class AudioPreviewController internal constructor(
         val cached = normalizedClips
         val session = ++playbackSession
         // Reserve the session synchronously; repeated taps cannot launch another mix.
-        state = state.copy(phase = PreviewPhase.Rendering, error = null, failedSlot = null)
+        state = state.copy(phase = PreviewPhase.Rendering, error = null, failedSlot = null, notice = null)
         playbackJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
                 val (normalized, preview) = withContext(renderDispatcher) {
@@ -249,6 +404,8 @@ class AudioPreviewController internal constructor(
 
     fun close() {
         if (closed) return
+        // An unfinished take stops and still saves; see startRecording.
+        if (stopRequest == null) stopRequest = StopRequest.Interruption
         stop()
         closed = true
         loadJob?.cancel()
@@ -269,6 +426,9 @@ class AudioPreviewController internal constructor(
         val loader: AudioFileLoader,
         val player: PcmPreviewPlayer,
         val assets: AssetManager,
+        val recorder: TakeRecorder,
+        val store: RecordingStore,
+        val drafts: RecordingDrafts,
     )
 
     private companion object {
@@ -277,6 +437,9 @@ class AudioPreviewController internal constructor(
             loader = AudioFileLoader(context.applicationContext.contentResolver),
             player = PcmPreviewPlayer(),
             assets = context.applicationContext.assets,
+            recorder = TakeRecorder(context.applicationContext),
+            store = RecordingStore(context.applicationContext.contentResolver),
+            drafts = RecordingDrafts(File(context.applicationContext.filesDir, "recordings-in-progress")),
         )
     }
 }

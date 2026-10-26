@@ -1,13 +1,18 @@
 package com.cassiadev.harmonysyncer.audio
 
+import java.io.File
+import java.time.LocalDateTime
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -16,10 +21,14 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class AudioPreviewControllerTest {
+    @get:Rule val folder = TemporaryFolder()
+
     @Test
     fun `failed replacement keeps cached audio and adjustment settings`() = runTest {
         val harness = FakeAudioHarness(this)
@@ -482,6 +491,284 @@ class AudioPreviewControllerTest {
         assertEquals(null, harness.controller.state.trackB)
     }
 
+
+    @Test
+    fun `builds the recording name from slot and time`() {
+        assertEquals("HarmonySyncer-A-20261026-153012", buildRecordingBaseName(TrackSlot.A, LocalDateTime.of(2026, 10, 26, 15, 30, 12)))
+    }
+
+    @Test
+    fun `recording fills the slot and resets the offset`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        harness.controller.updateSettings(MixSettings(offsetMs = 100))
+
+        harness.controller.startRecording(TrackSlot.A)
+        runCurrent()
+        assertEquals(PreviewPhase.Recording(TrackSlot.A, 0), harness.controller.state.phase)
+        harness.controller.stopRecording()
+        advanceUntilIdle()
+
+        val state = harness.controller.state
+        assertEquals("HarmonySyncer-A-20261026-153012.wav", state.trackA?.name)
+        assertEquals("b.wav", state.trackB?.name)
+        assertEquals(0, state.settings.offsetMs)
+        assertEquals(null, state.notice)
+        assertEquals(null, state.error)
+        assertEquals(PreviewPhase.Idle, state.phase)
+        assertFalse(harness.controller.hasNormalizedClips)
+        val (savedName, wav) = harness.savedRecordings.single()
+        assertEquals("HarmonySyncer-A-20261026-153012.wav", savedName)
+        assertTrue(readWavPcm16(wav.inputStream()).samples.contentEquals(shortArrayOf(1, 2, 3)))
+    }
+
+    @Test
+    fun `progress updates the elapsed time`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.recordBlock = { _, shouldStop, onProgress ->
+            onProgress(1_200)
+            harness.waitForStop(shouldStop)
+        }
+
+        harness.controller.startRecording(TrackSlot.B)
+        runCurrent()
+
+        assertEquals(PreviewPhase.Recording(TrackSlot.B, 1_200), harness.controller.state.phase)
+        harness.controller.stopRecording()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `time limit and interruption leave a notice`() = runTest {
+        for ((reason, expected) in listOf(
+            TakeStopReason.TimeLimit to RECORDING_TIME_LIMIT_NOTICE,
+            TakeStopReason.Interrupted to RECORDING_INTERRUPTED_NOTICE,
+        )) {
+            val harness = FakeAudioHarness(this)
+            harness.recordBlock = { _, _, _ -> RecordedTake(PcmClip(shortArrayOf(1), 48_000), reason, null) }
+            harness.controller.startRecording(TrackSlot.A)
+            advanceUntilIdle()
+            assertEquals(expected, harness.controller.state.notice)
+        }
+
+        val harness = FakeAudioHarness(this)
+        harness.controller.startRecording(TrackSlot.A)
+        runCurrent()
+        harness.controller.interruptRecording()
+        advanceUntilIdle()
+        assertEquals(RECORDING_INTERRUPTED_NOTICE, harness.controller.state.notice)
+    }
+
+    @Test
+    fun `the next edit clears the notice`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.controller.startRecording(TrackSlot.A)
+        runCurrent()
+        harness.controller.interruptRecording()
+        advanceUntilIdle()
+
+        harness.controller.updateSettings(MixSettings(volumeA = 0.5f))
+
+        assertEquals(null, harness.controller.state.notice)
+    }
+
+    @Test
+    fun `save failure keeps the take and wins over the notice`() = runTest {
+        for ((intact, expected) in listOf(true to RECORDING_SAVE_RETRY_MESSAGE, false to RECORDING_SAVE_LOST_MESSAGE)) {
+            val harness = FakeAudioHarness(this)
+            val draft = buildDraft("take-$intact", intact)
+            harness.recordBlock = { _, _, _ -> RecordedTake(PcmClip(shortArrayOf(1, 2), 48_000), TakeStopReason.TimeLimit, draft) }
+            harness.saveBlock = { _, _ -> error("storage full") }
+
+            harness.controller.startRecording(TrackSlot.A)
+            advanceUntilIdle()
+
+            val state = harness.controller.state
+            assertEquals("take-$intact.wav", state.trackA?.name)
+            assertEquals(expected, state.error)
+            assertEquals(null, state.notice)
+            // Kept either way: a broken draft still holds the part written before it failed.
+            assertTrue(File(folder.root, "take-$intact@48000.pcm").exists())
+        }
+    }
+
+    @Test
+    fun `successful save deletes the draft`() = runTest {
+        val harness = FakeAudioHarness(this)
+        val draft = buildDraft("take", intact = true)
+        harness.recordBlock = { _, _, _ -> RecordedTake(PcmClip(shortArrayOf(1, 2), 48_000), TakeStopReason.Requested, draft) }
+
+        harness.controller.startRecording(TrackSlot.B)
+        advanceUntilIdle()
+
+        assertEquals("take.wav", harness.controller.state.trackB?.name)
+        assertFalse(File(folder.root, "take@48000.pcm").exists())
+    }
+
+    @Test
+    fun `empty take keeps the slot and skips saving`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        val draft = buildDraft("empty", intact = true)
+        harness.recordBlock = { _, _, _ -> RecordedTake(PcmClip(ShortArray(0), 48_000), TakeStopReason.Requested, draft) }
+
+        harness.controller.startRecording(TrackSlot.A)
+        advanceUntilIdle()
+
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        assertTrue(harness.savedRecordings.isEmpty())
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+        assertFalse(File(folder.root, "empty@48000.pcm").exists())
+    }
+
+    @Test
+    fun `recorder failure reports the message`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.recordBlock = { _, _, _ -> throw IllegalStateException(MICROPHONE_UNAVAILABLE_MESSAGE) }
+
+        harness.controller.startRecording(TrackSlot.A)
+        advanceUntilIdle()
+
+        assertEquals(MICROPHONE_UNAVAILABLE_MESSAGE, harness.controller.state.error)
+        assertEquals(null, harness.controller.state.trackA)
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+    }
+
+    @Test
+    fun `recorder failure keeps the slot it would have replaced`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        harness.recordBlock = { _, _, _ -> throw IllegalStateException(MICROPHONE_UNAVAILABLE_MESSAGE) }
+
+        harness.controller.startRecording(TrackSlot.A)
+        advanceUntilIdle()
+
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        assertEquals(MICROPHONE_UNAVAILABLE_MESSAGE, harness.controller.state.error)
+        assertTrue(harness.savedRecordings.isEmpty())
+    }
+
+    @Test
+    fun `denied microphone reports the message`() = runTest {
+        val harness = FakeAudioHarness(this)
+
+        harness.controller.reportMicrophoneDenied()
+
+        assertEquals(MICROPHONE_DENIED_MESSAGE, harness.controller.state.error)
+    }
+
+    @Test
+    fun `editing is ignored while recording`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        harness.controller.startRecording(TrackSlot.A)
+        runCurrent()
+        val recording = harness.controller.state
+
+        harness.controller.selectFile(TrackSlot.B) { error("Must not load while recording") }
+        harness.controller.loadSample()
+        harness.controller.play()
+        harness.controller.updateSettings(MixSettings(volumeA = 0.1f))
+        harness.controller.startRecording(TrackSlot.B)
+        runCurrent()
+
+        assertEquals(recording, harness.controller.state)
+        assertTrue(harness.renderRequests.isEmpty())
+        harness.controller.stopRecording()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun `stop requests during saving change nothing`() = runTest {
+        val harness = FakeAudioHarness(this)
+        val saving = CompletableDeferred<Unit>()
+        var saves = 0
+        harness.saveBlock = { _, _ ->
+            saves++
+            saving.await()
+        }
+        harness.controller.startRecording(TrackSlot.A)
+        runCurrent()
+        harness.controller.stopRecording()
+        advanceTimeBy(20)
+        runCurrent()
+        assertEquals(PreviewPhase.SavingRecording(TrackSlot.A), harness.controller.state.phase)
+
+        harness.controller.stopRecording()
+        harness.controller.interruptRecording()
+        saving.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, saves)
+        assertEquals(null, harness.controller.state.notice)
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+    }
+
+    @Test
+    fun `close while recording still saves without filling the slot`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.controller.startRecording(TrackSlot.A)
+        runCurrent()
+
+        harness.controller.close()
+        advanceUntilIdle()
+
+        assertEquals(1, harness.savedRecordings.size)
+        assertEquals(null, harness.controller.state.trackA)
+    }
+
+    @Test
+    fun `recovery notice reports the count and ignores overlapping requests`() = runTest {
+        val harness = FakeAudioHarness(this)
+        val recovering = CompletableDeferred<Int>()
+        harness.recoverBlock = { recovering.await() }
+
+        harness.controller.recoverDrafts()
+        runCurrent()
+        harness.controller.recoverDrafts()
+        runCurrent()
+        recovering.complete(2)
+        advanceUntilIdle()
+
+        assertEquals(1, harness.recoverCalls)
+        assertEquals(buildRecoveredNotice(2), harness.controller.state.notice)
+
+        val nothing = FakeAudioHarness(this)
+        nothing.controller.recoverDrafts()
+        advanceUntilIdle()
+        assertEquals(null, nothing.controller.state.notice)
+    }
+
+    @Test
+    fun `a recovery that ends during a take shows its notice after the take`() = runTest {
+        val harness = FakeAudioHarness(this)
+        val recovering = CompletableDeferred<Int>()
+        harness.recoverBlock = { recovering.await() }
+        harness.controller.recoverDrafts()
+        runCurrent()
+        harness.controller.startRecording(TrackSlot.A)
+        runCurrent()
+
+        recovering.complete(1)
+        runCurrent()
+
+        val noticeDuringTake = harness.controller.state.notice
+        // Ends the take even if an assertion fails, so the polling fake recorder cannot hang the test.
+        harness.controller.interruptRecording()
+        advanceUntilIdle()
+        // A notice during a take would be read aloud by TalkBack into the microphone.
+        assertEquals(null, noticeDuringTake)
+        assertEquals("$RECORDING_INTERRUPTED_NOTICE ${buildRecoveredNotice(1)}", harness.controller.state.notice)
+    }
+
+    private fun buildDraft(name: String, intact: Boolean): RecordingDraft {
+        val draft = checkNotNull(RecordingDrafts(folder.root).create(name, 48_000))
+        if (intact) draft.append(shortArrayOf(1, 2), 0, 2)
+        draft.close()
+        if (!intact) draft.append(shortArrayOf(1), 0, 1)
+        return draft
+    }
+
     /**
      * Builds a controller whose file loading, sample loading, rendering and playback are fakes running on
      * the test scheduler, and records what the controller asks them to render, play, stop and close.
@@ -498,6 +785,13 @@ class AudioPreviewControllerTest {
         var sampleBlock: suspend () -> Pair<LoadedAudioFile, LoadedAudioFile> = { error("Set sampleBlock in the test") }
         var normalizeBlock: suspend (PcmClip, PcmClip) -> Pair<PcmClip, PcmClip> = { a, b -> a to b }
         var normalizeCalls = 0
+        var recordBlock: suspend (String, () -> Boolean, (Long) -> Unit) -> RecordedTake = { _, shouldStop, _ ->
+            waitForStop(shouldStop)
+        }
+        val savedRecordings = mutableListOf<Pair<String, ByteArray>>()
+        var saveBlock: suspend (String, ByteArray) -> Unit = { name, wav -> savedRecordings += name to wav }
+        var recoverBlock: suspend () -> Int = { 0 }
+        var recoverCalls = 0
         val controller = AudioPreviewController(
             scope = CoroutineScope(ownedJob + dispatcher),
             ioDispatcher = dispatcher,
@@ -518,7 +812,20 @@ class AudioPreviewControllerTest {
                 normalizeCalls++
                 normalizeBlock(a, b)
             },
+            recordTake = { baseName, shouldStop, onProgress -> recordBlock(baseName, shouldStop, onProgress) },
+            saveRecording = { name, wav -> saveBlock(name, wav) },
+            recoverRecordings = {
+                recoverCalls++
+                recoverBlock()
+            },
+            currentTime = { LocalDateTime.of(2026, 10, 26, 15, 30, 12) },
         )
+
+        /** Polls like the real recorder until a stop is requested, then returns a three-sample take. */
+        suspend fun waitForStop(shouldStop: () -> Boolean): RecordedTake {
+            while (!shouldStop()) delay(10)
+            return RecordedTake(PcmClip(shortArrayOf(1, 2, 3), 48_000), TakeStopReason.Requested, null)
+        }
 
         fun selectPair(a: LoadedAudioFile, b: LoadedAudioFile) {
             controller.selectFile(TrackSlot.A) { a }

@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +60,12 @@ fun TrackCard(
     onSelect: () -> Unit,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
+    canRecord: Boolean = false,
+    onRecord: () -> Unit = {},
+    /** Non-null while this slot records: the card then shows the time and a stop button instead. */
+    recordingElapsedMs: Long? = null,
+    onStopRecording: () -> Unit = {},
+    loadingText: String = stringResource(R.string.track_loading),
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = MaterialTheme.shapes.medium
@@ -137,7 +144,25 @@ fun TrackCard(
                 }
             }
             val selectTag = if (isA) AudioPreviewTags.SELECT_A else AudioPreviewTags.SELECT_B
-            if (clip == null) {
+            if (recordingElapsedMs != null) {
+                Text(
+                    formatRecordingElapsed(recordingElapsedMs),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace,
+                    color = trackText,
+                    modifier = Modifier.testTag(AudioPreviewTags.RECORDING_TIME),
+                )
+                FilledIconButton(
+                    onClick = onStopRecording,
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = colors.surface,
+                        contentColor = track,
+                    ),
+                    modifier = Modifier.size(48.dp).testTag(AudioPreviewTags.STOP_RECORDING),
+                ) {
+                    Icon(painterResource(R.drawable.ic_stop), contentDescription = stringResource(R.string.stop_recording))
+                }
+            } else if (clip == null) {
                 FilledIconButton(
                     onClick = onSelect,
                     enabled = enabled,
@@ -166,6 +191,19 @@ fun TrackCard(
                     Text(stringResource(R.string.change_file), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
+            if (recordingElapsedMs == null && canRecord) {
+                IconButton(
+                    onClick = onRecord,
+                    enabled = enabled,
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = trackText),
+                    modifier = Modifier.size(48.dp).testTag(if (isA) AudioPreviewTags.RECORD_A else AudioPreviewTags.RECORD_B),
+                ) {
+                    Icon(
+                        painterResource(R.drawable.ic_mic),
+                        contentDescription = stringResource(if (isA) R.string.record_a else R.string.record_b),
+                    )
+                }
+            }
         }
         if (loading) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -175,7 +213,7 @@ fun TrackCard(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    stringResource(R.string.track_loading),
+                    loadingText,
                     style = MaterialTheme.typography.bodySmall,
                     color = colors.onSurfaceVariant,
                 )
