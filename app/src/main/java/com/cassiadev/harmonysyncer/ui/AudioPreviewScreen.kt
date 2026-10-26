@@ -89,6 +89,10 @@ object AudioPreviewTags {
     const val STOP = "stop"
     const val SAMPLE = "sample"
     const val CREDIT = "credit"
+    const val RECORD_A = "recordA"
+    const val RECORD_B = "recordB"
+    const val STOP_RECORDING = "stopRecording"
+    const val RECORDING_TIME = "recordingTime"
 }
 
 // Dataset record with the CC BY 4.0 license for the bundled Locus iste excerpt.
@@ -108,6 +112,9 @@ fun AudioPreviewScreen(
     onStop: () -> Unit,
     onLoadSample: () -> Unit,
     modifier: Modifier = Modifier,
+    canRecord: Boolean = false,
+    onRecord: (TrackSlot) -> Unit = {},
+    onStopRecording: () -> Unit = {},
 ) {
     val bothSelected = state.trackA != null && state.trackB != null
     var timingOpen by rememberSaveable { mutableStateOf(false) }
@@ -151,11 +158,19 @@ fun AudioPreviewScreen(
                     slot = slot,
                     clip = if (slot == TrackSlot.A) state.trackA else state.trackB,
                     loading = (phase is PreviewPhase.Loading && phase.slot == slot) ||
-                        phase == PreviewPhase.LoadingSample,
+                        phase == PreviewPhase.LoadingSample ||
+                        (phase is PreviewPhase.SavingRecording && phase.slot == slot),
                     error = state.error.takeIf { state.failedSlot == slot },
                     enabled = state.canEdit,
                     onSelect = if (slot == TrackSlot.A) onSelectA else onSelectB,
                     compact = bothSelected,
+                    canRecord = canRecord,
+                    onRecord = { onRecord(slot) },
+                    recordingElapsedMs = (phase as? PreviewPhase.Recording)?.takeIf { it.slot == slot }?.elapsedMs,
+                    onStopRecording = onStopRecording,
+                    loadingText = stringResource(
+                        if (phase is PreviewPhase.SavingRecording) R.string.track_saving else R.string.track_loading,
+                    ),
                 )
             }
         }
@@ -166,6 +181,14 @@ fun AudioPreviewScreen(
                 icon = R.drawable.ic_check,
                 text = stringResource(R.string.kept_notice),
                 iconColor = LocalHarmonyExtraColors.current.success,
+            )
+        }
+        // Shown with or without both files: recording is possible from the start layout.
+        if (state.isRecording) {
+            Notice(
+                icon = R.drawable.ic_lock,
+                text = stringResource(R.string.recording_lock_notice),
+                iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
@@ -230,6 +253,12 @@ fun AudioPreviewScreen(
             },
         )
         if (state.error != null && state.failedSlot == null) ErrorBox(state.error)
+        if (state.notice != null) {
+            // Announced like the error box: it can appear while the user is away, e.g. after a recovery.
+            Box(modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+                Notice(icon = R.drawable.ic_check, text = state.notice, iconColor = LocalHarmonyExtraColors.current.success)
+            }
+        }
         MainButton(state = state, bothSelected = bothSelected, onPlay = onPlay, onStop = onStop)
         if (!bothSelected) {
             TextButton(

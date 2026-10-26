@@ -41,6 +41,7 @@ import com.cassiadev.harmonysyncer.audio.ClipInfo
 import com.cassiadev.harmonysyncer.audio.MixSettings
 import com.cassiadev.harmonysyncer.audio.PreviewPhase
 import com.cassiadev.harmonysyncer.audio.PreviewUiState
+import com.cassiadev.harmonysyncer.audio.RECORDING_INTERRUPTED_NOTICE
 import com.cassiadev.harmonysyncer.audio.TrackSlot
 import com.cassiadev.harmonysyncer.ui.AudioPreviewScreen
 import com.cassiadev.harmonysyncer.ui.AudioPreviewTags
@@ -316,10 +317,68 @@ class AudioPreviewScreenTest {
     }
 
     /** `setContent` may run once per test, so tests change the returned state instead. */
+
+    @Test
+    fun recordButtonsAppearWithAMicrophone() {
+        val recorded = mutableListOf<TrackSlot>()
+        show(buildReadyState().copy(trackB = null), canRecord = true, onRecord = { recorded += it })
+
+        compose.onNodeWithContentDescription("음성 A 녹음").assertIsEnabled()
+        compose.onNodeWithContentDescription("음성 B 녹음").performScrollTo().performClick()
+
+        assertEquals(listOf(TrackSlot.B), recorded)
+    }
+
+    @Test
+    fun recordButtonsHideWithoutAMicrophone() {
+        show(buildReadyState(), canRecord = false)
+
+        compose.onNodeWithContentDescription("음성 A 녹음").assertDoesNotExist()
+        compose.onNodeWithContentDescription("음성 B 녹음").assertDoesNotExist()
+    }
+
+    @Test
+    fun recordingCardShowsTimeAndStop() {
+        var stops = 0
+        show(
+            buildReadyState().copy(phase = PreviewPhase.Recording(TrackSlot.A, 12_400)),
+            canRecord = true,
+            onStopRecording = { stops++ },
+        )
+
+        compose.onNodeWithTag(AudioPreviewTags.RECORDING_TIME).assertTextEquals("0:12")
+        compose.onNodeWithContentDescription("음성 A 녹음").assertDoesNotExist()
+        compose.onNodeWithText("음성 A를 녹음하는 중입니다 · 0:12").assertExists()
+        compose.onNodeWithContentDescription("음성 B 녹음").assertIsNotEnabled()
+        compose.onNodeWithTag(AudioPreviewTags.SELECT_B).assertIsNotEnabled()
+        compose.onNodeWithText(RECORDING_LOCK_NOTICE).performScrollTo().assertExists()
+        compose.onNodeWithContentDescription("녹음 정지").performScrollTo().performClick()
+        assertEquals(1, stops)
+    }
+
+    @Test
+    fun savingShowsItsStatus() {
+        show(buildReadyState().copy(phase = PreviewPhase.SavingRecording(TrackSlot.B)), canRecord = true)
+
+        compose.onNodeWithText("녹음을 저장하는 중입니다…").assertExists()
+        compose.onNode(hasText("저장하는 중…") and hasAnyAncestor(hasTestTag(AudioPreviewTags.CARD_B))).assertExists()
+        compose.onNodeWithTag(AudioPreviewTags.STOP_RECORDING).assertDoesNotExist()
+    }
+
+    @Test
+    fun noticeIsShown() {
+        show(buildReadyState().copy(notice = RECORDING_INTERRUPTED_NOTICE))
+
+        compose.onNodeWithText(RECORDING_INTERRUPTED_NOTICE).performScrollTo().assertExists()
+    }
+
     private fun show(
         initial: PreviewUiState,
         onSettingsChange: (MixSettings) -> Unit = {},
         onLoadSample: () -> Unit = {},
+        canRecord: Boolean = false,
+        onRecord: (TrackSlot) -> Unit = {},
+        onStopRecording: () -> Unit = {},
     ): MutableState<PreviewUiState> {
         val state = mutableStateOf(initial)
         compose.setContent {
@@ -328,6 +387,9 @@ class AudioPreviewScreenTest {
                     state.value,
                     onSelectA = {}, onSelectB = {}, onSettingsChange = onSettingsChange, onPlay = {}, onStop = {},
                     onLoadSample = onLoadSample,
+                    canRecord = canRecord,
+                    onRecord = onRecord,
+                    onStopRecording = onStopRecording,
                 )
             }
         }
@@ -345,6 +407,7 @@ class AudioPreviewScreenTest {
 
     private companion object {
         const val LOCK_NOTICE = "재생 중에는 바꿀 수 없습니다. 정지하면 다시 조절할 수 있습니다."
+        const val RECORDING_LOCK_NOTICE = "녹음 중에는 바꿀 수 없습니다. 녹음을 멈추면 다시 조절할 수 있습니다."
         const val KEPT_NOTICE = "기존 파일과 설정은 그대로입니다."
     }
 }
