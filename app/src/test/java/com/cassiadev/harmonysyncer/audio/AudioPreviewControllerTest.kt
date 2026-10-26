@@ -635,6 +635,20 @@ class AudioPreviewControllerTest {
     }
 
     @Test
+    fun `recorder failure keeps the slot it would have replaced`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        harness.recordBlock = { _, _, _ -> throw IllegalStateException(MICROPHONE_UNAVAILABLE_MESSAGE) }
+
+        harness.controller.startRecording(TrackSlot.A)
+        advanceUntilIdle()
+
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        assertEquals(MICROPHONE_UNAVAILABLE_MESSAGE, harness.controller.state.error)
+        assertTrue(harness.savedRecordings.isEmpty())
+    }
+
+    @Test
     fun `denied microphone reports the message`() = runTest {
         val harness = FakeAudioHarness(this)
 

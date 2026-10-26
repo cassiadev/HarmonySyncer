@@ -56,6 +56,13 @@ fun readTake(
     try {
         val reason = run {
             while (frames < maxFrames) {
+                // Checked before a stop request: a stopped take that was silenced from the start must not save
+                // the silenced samples left in the buffer. Silenced from the start usually means another app holds
+                // the microphone (Android 10+).
+                if (isSilenced()) {
+                    if (frames > 0) return@run TakeStopReason.Interrupted
+                    failWithoutAudio()
+                }
                 if (shouldStop()) {
                     // A slow draft write may leave much of the time before the stop in the microphone buffer.
                     val tail = readAvailable(buffer, frames, maxFrames - frames)
@@ -64,11 +71,6 @@ fun readTake(
                         frames += tail
                     }
                     return@run TakeStopReason.Requested
-                }
-                // Silenced from the start usually means another app holds the microphone (Android 10+).
-                if (isSilenced()) {
-                    if (frames > 0) return@run TakeStopReason.Interrupted
-                    failWithoutAudio()
                 }
                 val count = read(buffer, frames, minOf(chunkFrames, maxFrames - frames))
                 if (count < 0) {
