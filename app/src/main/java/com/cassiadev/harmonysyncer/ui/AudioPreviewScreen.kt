@@ -246,7 +246,8 @@ fun AudioPreviewScreen(
                     formatRecordingElapsed(phase.elapsedMs),
                 )
                 is PreviewPhase.SavingRecording -> stringResource(R.string.status_saving_recording)
-                PreviewPhase.Idle -> if (bothSelected) {
+                // The metronome sheet covers the screen while it runs; the line reads as when idle.
+                PreviewPhase.Idle, is PreviewPhase.Metronome -> if (bothSelected) {
                     stringResource(R.string.status_ready)
                 } else {
                     stringResource(R.string.selected_count, selectedCount)

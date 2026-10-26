@@ -265,7 +265,7 @@ class MainActivityRecreationTest {
                 playPreview = playPreview,
                 stopPlayback = stopPlayback,
                 closePlayback = closePlayback,
-                recordTake = recordTake,
+                recordTake = { baseName, shouldStop, onProgress, _ -> recordTake(baseName, shouldStop, onProgress) },
                 saveRecording = saveRecording,
             )
         }
