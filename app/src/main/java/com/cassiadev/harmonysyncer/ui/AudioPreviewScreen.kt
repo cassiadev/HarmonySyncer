@@ -231,6 +231,7 @@ fun AudioPreviewScreen(
 
         val selectedCount = listOfNotNull(state.trackA, state.trackB).size
         StatusLine(
+            announce = phase !is PreviewPhase.Recording,
             // As in the design asset: a check in Audio B's color once a file is added.
             showCheck = !bothSelected && selectedCount > 0 && phase == PreviewPhase.Idle,
             text = when (phase) {
@@ -255,7 +256,8 @@ fun AudioPreviewScreen(
         if (state.error != null && state.failedSlot == null) ErrorBox(state.error)
         if (state.notice != null) {
             // Announced like the error box: it can appear while the user is away, e.g. after a recovery.
-            Box(modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
+            // Merged so the live-region node itself carries the notice text.
+            Box(modifier = Modifier.semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }) {
                 Notice(icon = R.drawable.ic_check, text = state.notice, iconColor = LocalHarmonyExtraColors.current.success)
             }
         }
@@ -497,7 +499,8 @@ private fun Notice(icon: Int, text: String, iconColor: Color) {
 }
 
 @Composable
-private fun StatusLine(showCheck: Boolean, text: String) {
+/** [announce] is off while recording: the elapsed time would be read out every second, into the take. */
+private fun StatusLine(showCheck: Boolean, text: String, announce: Boolean) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.Center,
@@ -517,7 +520,7 @@ private fun StatusLine(showCheck: Boolean, text: String) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
-            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            modifier = if (announce) Modifier.semantics { liveRegion = LiveRegionMode.Polite } else Modifier,
         )
     }
 }

@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
@@ -370,6 +371,26 @@ class AudioPreviewScreenTest {
         show(buildReadyState().copy(notice = RECORDING_INTERRUPTED_NOTICE))
 
         compose.onNodeWithText(RECORDING_INTERRUPTED_NOTICE).performScrollTo().assertExists()
+    }
+
+    @Test
+    fun recordingStatusIsNotAnnouncedEverySecond() {
+        // The elapsed time changes every second; announcing it would put TalkBack's voice into the take.
+        val state = show(buildReadyState().copy(phase = PreviewPhase.Recording(TrackSlot.A, 12_400)))
+        compose.onNodeWithText("음성 A를 녹음하는 중입니다 · 0:12")
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.LiveRegion))
+
+        state.value = buildReadyState().copy(phase = PreviewPhase.SavingRecording(TrackSlot.A))
+
+        compose.onNodeWithText("녹음을 저장하는 중입니다…").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion))
+    }
+
+    @Test
+    fun noticeIsAnnounced() {
+        show(buildReadyState().copy(notice = RECORDING_INTERRUPTED_NOTICE))
+
+        compose.onNode(hasText(RECORDING_INTERRUPTED_NOTICE) and SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion))
+            .assertExists()
     }
 
     private fun show(
