@@ -15,6 +15,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 // 44.1 kHz is the only capture rate Android guarantees on every device.
 private val RECORDING_SAMPLE_RATES = intArrayOf(48_000, 44_100)
 
+/**
+ * One second of mono PCM16, or the device minimum if larger. Each chunk is also written to the draft on the
+ * reading thread, so a storage stall up to this long fills the buffer instead of dropping samples.
+ */
+internal fun chooseCaptureBufferBytes(sampleRate: Int, minBufferBytes: Int): Int =
+    maxOf(minBufferBytes, sampleRate * Short.SIZE_BYTES)
+
 /** Records one mono PCM16 take from the microphone through [readTake]. */
 class TakeRecorder(private val context: Context) {
     /** Blocking; call on an IO thread. Throws [IllegalStateException] with a user message if it cannot record. */
@@ -70,7 +77,7 @@ class TakeRecorder(private val context: Context) {
                     rate,
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT,
-                    maxOf(minBuffer, rate / 5 * Short.SIZE_BYTES),
+                    chooseCaptureBufferBytes(rate, minBuffer),
                 )
             } catch (_: IllegalArgumentException) {
                 continue
