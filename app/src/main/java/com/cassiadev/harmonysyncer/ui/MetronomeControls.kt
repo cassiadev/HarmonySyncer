@@ -39,8 +39,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -80,7 +80,8 @@ fun MetronomeRow(settings: MetronomeSettings, enabled: Boolean, onClick: () -> U
             .border(1.dp, colors.outlineVariant, MetronomeRowShape)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .testTag(AudioPreviewTags.METRONOME)
-            .alpha(if (enabled) 1f else 0.6f)
+            // alpha(1f) drops its layer; adding and removing it left a moved row without its background on Android 10.
+            .graphicsLayer { alpha = if (enabled) 1f else 0.6f }
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
