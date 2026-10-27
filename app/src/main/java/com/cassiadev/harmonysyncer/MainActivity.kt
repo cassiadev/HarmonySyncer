@@ -69,6 +69,9 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         onStopRecording = controller::stopRecording,
+                        onMetronomeChange = controller::updateMetronome,
+                        onStartMetronome = controller::startMetronome,
+                        onStopMetronome = controller::stopMetronome,
                     )
                 }
             }

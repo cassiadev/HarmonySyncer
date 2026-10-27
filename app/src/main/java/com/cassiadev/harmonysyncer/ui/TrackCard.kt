@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.cassiadev.harmonysyncer.R
 import com.cassiadev.harmonysyncer.audio.ClipInfo
+import com.cassiadev.harmonysyncer.audio.MetronomeSettings
 import com.cassiadev.harmonysyncer.audio.TrackSlot
 import com.cassiadev.harmonysyncer.ui.theme.DANGER_SOFT
 import com.cassiadev.harmonysyncer.ui.theme.LocalHarmonyExtraColors
@@ -66,6 +67,9 @@ fun TrackCard(
     recordingElapsedMs: Long? = null,
     onStopRecording: () -> Unit = {},
     loadingText: String = stringResource(R.string.track_loading),
+    /** The frozen settings of a metronome take recording into this slot, and its first count-in beat once known. */
+    recordingMetronome: MetronomeSettings? = null,
+    countInStartNanos: Long? = null,
 ) {
     val colors = MaterialTheme.colorScheme
     val shape = MaterialTheme.shapes.medium
@@ -203,6 +207,17 @@ fun TrackCard(
                         contentDescription = stringResource(if (isA) R.string.record_a else R.string.record_b),
                     )
                 }
+            }
+        }
+        if (recordingElapsedMs != null && recordingMetronome != null) {
+            if (countInStartNanos == null) {
+                Text(
+                    stringResource(R.string.metronome_preparing),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = colors.onSurfaceVariant,
+                )
+            } else {
+                BeatDisplay(recordingMetronome.bpm, recordingMetronome.beatsPerBar, countInStartNanos, showCountIn = true)
             }
         }
         if (loading) {

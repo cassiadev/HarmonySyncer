@@ -56,4 +56,20 @@
     <string name="rendering_button">합치는 중…</string>
     <string name="stop_preview">정지</string>
     <string name="replay_hint">두 파일 모두 처음부터 재생합니다. 조절값은 다음 재생부터 반영됩니다.</string>
+    <string name="metronome_summary">메트로놈 · %1$d BPM · %2$d박 · %3$s</string>
+    <string name="metronome_on">켬</string>
+    <string name="metronome_off">끔</string>
+    <string name="metronome_title">메트로놈</string>
+    <string name="metronome_use">녹음할 때 사용</string>
+    <string name="bpm_decrease">BPM 낮추기</string>
+    <string name="bpm_increase">BPM 높이기</string>
+    <string name="tap_tempo">탭 템포</string>
+    <string name="beats_per_bar">한 마디</string>
+    <string name="beats_value">%1$d박</string>
+    <string name="click_sound">클릭음</string>
+    <string name="click_hint">녹음 중에는 이어폰으로 나갈 때만 납니다. 블루투스 스피커로는 녹음에 섞일 수 있습니다</string>
+    <string name="metronome_start">메트로놈 시작</string>
+    <string name="metronome_stop">메트로놈 정지</string>
+    <string name="metronome_preparing">준비 중</string>
+    <string name="count_in">카운트인 %1$d/%2$d</string>
 </resources>

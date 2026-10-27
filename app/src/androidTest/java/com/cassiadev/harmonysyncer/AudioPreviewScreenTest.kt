@@ -39,6 +39,7 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.espresso.Espresso
 import com.cassiadev.harmonysyncer.audio.AUDIO_TOO_LONG_MESSAGE
 import com.cassiadev.harmonysyncer.audio.ClipInfo
+import com.cassiadev.harmonysyncer.audio.MetronomeSettings
 import com.cassiadev.harmonysyncer.audio.MixSettings
 import com.cassiadev.harmonysyncer.audio.PreviewPhase
 import com.cassiadev.harmonysyncer.audio.PreviewUiState
@@ -393,6 +394,97 @@ class AudioPreviewScreenTest {
             .assertExists()
     }
 
+    @Test
+    fun metronomeRowShowsSettingsAndOpensTheSheet() {
+        show(PreviewUiState())
+
+        compose.onNodeWithText("메트로놈 · 120 BPM · 4박 · 끔").assertExists()
+        openMetronomeSheet()
+
+        compose.onNodeWithText("녹음할 때 사용").assertExists()
+        compose.onNodeWithText("탭 템포").assertExists()
+        compose.onNodeWithText(CLICK_HINT).assertExists()
+    }
+
+    @Test
+    fun metronomeRowLocksWhileBusy() {
+        show(buildReadyState().copy(phase = PreviewPhase.Playing))
+
+        compose.onNodeWithTag(AudioPreviewTags.METRONOME).assertIsNotEnabled()
+    }
+
+    @Test
+    fun bpmButtonsStopAtTheRangeEnds() {
+        val changes = mutableListOf<MetronomeSettings>()
+        val state = show(PreviewUiState(metronome = MetronomeSettings(bpm = 240)), onMetronomeChange = { changes += it })
+        openMetronomeSheet()
+
+        compose.onNodeWithContentDescription("BPM 높이기").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("BPM 낮추기").assertIsEnabled().performClick()
+        assertEquals(239, changes.last().bpm)
+
+        state.value = state.value.copy(metronome = MetronomeSettings(bpm = 40))
+        compose.onNodeWithContentDescription("BPM 낮추기").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("BPM 높이기").assertIsEnabled().performClick()
+        assertEquals(41, changes.last().bpm)
+    }
+
+    @Test
+    fun startButtonFollowsThePhase() {
+        var starts = 0
+        val state = show(PreviewUiState(), onStartMetronome = { starts++ })
+        openMetronomeSheet()
+
+        compose.onNodeWithText("메트로놈 시작").performScrollTo().performClick()
+        assertEquals(1, starts)
+        state.value = state.value.copy(phase = PreviewPhase.Metronome(null))
+
+        compose.onNodeWithText("메트로놈 정지").assertExists()
+    }
+
+    @Test
+    fun dismissingTheSheetStopsTheMetronome() {
+        var stops = 0
+        val state = show(PreviewUiState(), onStopMetronome = { stops++ })
+        openMetronomeSheet()
+        state.value = state.value.copy(phase = PreviewPhase.Metronome(System.nanoTime()))
+        compose.waitForIdle()
+
+        Espresso.pressBack()
+        compose.waitForIdle()
+
+        assertEquals(1, stops)
+        compose.onNodeWithText("녹음할 때 사용").assertDoesNotExist()
+    }
+
+    @Test
+    fun recordingCardShowsPreparingThenCountIn() {
+        val settings = MetronomeSettings(useForRecording = true, bpm = 40, beatsPerBar = 4, clickOn = true)
+        val state = show(PreviewUiState(phase = PreviewPhase.Recording(TrackSlot.A, 0, settings, null)))
+
+        compose.onNodeWithText("준비 중").assertExists()
+        // At 40 BPM a beat lasts 1.5 s, so 2 s after the first beat is beat 1 with a wide margin either side.
+        state.value = state.value.copy(
+            phase = PreviewPhase.Recording(TrackSlot.A, 0, settings, System.nanoTime() - 2_000_000_000),
+        )
+
+        compose.onNodeWithText("카운트인 2/4").assertExists()
+        compose.onNodeWithTag(AudioPreviewTags.METRONOME_BEATS).assertExists()
+    }
+
+    @Test
+    fun recordingWithoutMetronomeHasNoBeats() {
+        show(PreviewUiState(phase = PreviewPhase.Recording(TrackSlot.A, 0)))
+
+        compose.onNodeWithTag(AudioPreviewTags.METRONOME_BEATS).assertDoesNotExist()
+        compose.onNodeWithText("준비 중").assertDoesNotExist()
+    }
+
+    private fun openMetronomeSheet() {
+        compose.onNodeWithTag(AudioPreviewTags.METRONOME).performScrollTo().performClick()
+        compose.waitForIdle()
+    }
+
     private fun show(
         initial: PreviewUiState,
         onSettingsChange: (MixSettings) -> Unit = {},
@@ -400,6 +492,9 @@ class AudioPreviewScreenTest {
         canRecord: Boolean = false,
         onRecord: (TrackSlot) -> Unit = {},
         onStopRecording: () -> Unit = {},
+        onMetronomeChange: (MetronomeSettings) -> Unit = {},
+        onStartMetronome: () -> Unit = {},
+        onStopMetronome: () -> Unit = {},
     ): MutableState<PreviewUiState> {
         val state = mutableStateOf(initial)
         compose.setContent {
@@ -411,6 +506,9 @@ class AudioPreviewScreenTest {
                     canRecord = canRecord,
                     onRecord = onRecord,
                     onStopRecording = onStopRecording,
+                    onMetronomeChange = onMetronomeChange,
+                    onStartMetronome = onStartMetronome,
+                    onStopMetronome = onStopMetronome,
                 )
             }
         }
@@ -430,5 +528,6 @@ class AudioPreviewScreenTest {
         const val LOCK_NOTICE = "재생 중에는 바꿀 수 없습니다. 정지하면 다시 조절할 수 있습니다."
         const val RECORDING_LOCK_NOTICE = "녹음 중에는 바꿀 수 없습니다. 녹음을 멈추면 다시 조절할 수 있습니다."
         const val KEPT_NOTICE = "기존 파일과 설정은 그대로입니다."
+        const val CLICK_HINT = "녹음 중에는 이어폰으로 나갈 때만 납니다. 블루투스 스피커로는 녹음에 섞일 수 있습니다"
     }
 }
