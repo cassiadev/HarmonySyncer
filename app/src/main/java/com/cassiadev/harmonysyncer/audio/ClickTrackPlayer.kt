@@ -86,6 +86,7 @@ class ClickTrackPlayer {
             var countInNanos: Long? = null
             var firstClickFrame = 0L
             var lastResync = startNanos
+            val settle = ClickGridSettle()
             var written = 0L
             while (!shouldStop()) {
                 pendingRestart?.let {
@@ -110,7 +111,8 @@ class ClickTrackPlayer {
                     countInNanos = start
                     lastResync = now
                     onCountInStart(start, measured)
-                } else if (countIn != null && (routingChanged || now - lastResync >= RESYNC_NANOS)) {
+                } else if (countIn != null && (routingChanged || settle.settling || now - lastResync >= RESYNC_NANOS)) {
+                    if (routingChanged) settle.startSettling(now)
                     routingChanged = false
                     lastResync = now
                     // Only a timestamp that moved on since the last one is trusted, as at the start.
@@ -119,12 +121,13 @@ class ClickTrackPlayer {
                     if (fresh != null && (previous == null || (fresh.frame > previous.frame && fresh.nanos > previous.nanos))) {
                         if (previous != null) {
                             val measuredFrame = frameAt(countIn, fresh, rate)
-                            if (shouldMoveClickFrame(firstClickFrame, measuredFrame, rate)) firstClickFrame = measuredFrame
+                            firstClickFrame = settle.onMeasured(firstClickFrame, measuredFrame, rate, now)
                         }
                         lastRead = fresh
                     }
                 }
-                val muted = recording && !allowsRecordingClick(track.routedDevice?.type.also { lastRoutedDeviceType = it })
+                // Quiet while the timestamps settle, so no click lands off the beat (see ClickGridSettle).
+                val muted = (recording && !allowsRecordingClick(track.routedDevice?.type.also { lastRoutedDeviceType = it })) || settle.settling
                 lastChunkMuted = muted
                 if (countInNanos == null) {
                     out.fill(0)

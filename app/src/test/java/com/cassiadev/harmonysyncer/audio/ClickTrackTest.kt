@@ -129,6 +129,53 @@ class ClickTrackTest {
     }
 
     @Test
+    fun `a small difference keeps the grid and plays`() {
+        val settle = ClickGridSettle()
+
+        assertEquals(10_000L, settle.onMeasured(current = 10_000, measured = 10_050, sampleRate = rate, nowNanos = 0))
+        assertFalse(settle.settling)
+    }
+
+    @Test
+    fun `a jump goes quiet until two readings agree`() {
+        // Steps like those logged on the M33 after plugging in earphones: −34, −30, −112 ms, then steady.
+        val settle = ClickGridSettle()
+        var frame = settle.onMeasured(10_000, 10_000 - 1_622, rate, 0)
+        assertTrue(settle.settling)
+        frame = settle.onMeasured(frame, frame - 1_457, rate, 0)
+        assertTrue(settle.settling)
+        frame = settle.onMeasured(frame, frame - 5_384, rate, 0)
+        assertTrue(settle.settling)
+
+        assertEquals(frame - 7, settle.onMeasured(frame, frame - 7, rate, 0))
+        assertFalse(settle.settling)
+    }
+
+    @Test
+    fun `a route change goes quiet until two readings agree`() {
+        val settle = ClickGridSettle()
+        settle.startSettling(nowNanos = 0)
+        assertTrue(settle.settling)
+
+        // The first reading after the change has nothing to agree with yet.
+        assertEquals(10_010L, settle.onMeasured(10_000, 10_010, rate, 0))
+        assertTrue(settle.settling)
+        assertEquals(10_020L, settle.onMeasured(10_010, 10_020, rate, 0))
+        assertFalse(settle.settling)
+    }
+
+    @Test
+    fun `clicks come back after a second even if readings never agree`() {
+        val settle = ClickGridSettle()
+        settle.startSettling(nowNanos = 0)
+        settle.onMeasured(10_000, 11_000, rate, nowNanos = 500_000_000)
+        assertTrue(settle.settling)
+
+        settle.onMeasured(11_000, 12_000, rate, nowNanos = 1_000_000_000)
+        assertFalse(settle.settling)
+    }
+
+    @Test
     fun `recording clicks only on listed outputs`() {
         for (type in listOf(
             AudioDeviceInfo.TYPE_WIRED_HEADSET,

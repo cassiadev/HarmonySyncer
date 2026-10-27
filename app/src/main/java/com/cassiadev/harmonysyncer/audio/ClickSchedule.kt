@@ -150,3 +150,37 @@ fun chooseFirstClickFrame(writtenFrames: Long, chunkFrames: Int, earliestFrame: 
 /** Small clock differences keep the click grid; a jump over 2 ms (a new route, a stall) moves it. */
 fun shouldMoveClickFrame(current: Long, measured: Long, sampleRate: Int): Boolean =
     abs(measured - current) * 1_000 > 2L * sampleRate
+
+private const val SETTLE_LIMIT_NANOS = NANOS_PER_SECOND
+
+/**
+ * Keeps clicks quiet while the output timestamps settle: after a route change, or when a reading moves the click grid
+ * by more than 2 ms, until two readings in a row agree. Changing outputs stalls the track and its timestamps take
+ * about half a second to steady, so the clicks in between would land off the beat. Quiet lasts at most a second, for
+ * a device whose readings never agree.
+ */
+class ClickGridSettle {
+    var settling = false
+        private set
+    private var lastMeasured: Long? = null
+    private var sinceNanos = 0L
+
+    fun startSettling(nowNanos: Long) {
+        settling = true
+        lastMeasured = null
+        sinceNanos = nowNanos
+    }
+
+    /** The click grid's first frame after a reading that put it at [measured]. */
+    fun onMeasured(current: Long, measured: Long, sampleRate: Int, nowNanos: Long): Long {
+        if (!settling) {
+            if (!shouldMoveClickFrame(current, measured, sampleRate)) return current
+            startSettling(nowNanos)
+        }
+        val last = lastMeasured
+        lastMeasured = measured
+        val agreed = last != null && !shouldMoveClickFrame(last, measured, sampleRate)
+        if (agreed || nowNanos - sinceNanos >= SETTLE_LIMIT_NANOS) settling = false
+        return measured
+    }
+}
