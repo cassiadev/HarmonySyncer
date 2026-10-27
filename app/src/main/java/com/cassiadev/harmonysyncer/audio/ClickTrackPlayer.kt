@@ -75,7 +75,7 @@ class ClickTrackPlayer {
             val startNanos = System.nanoTime()
             val wait = TimestampWait(startNanos)
             val timestamp = AudioTimestamp()
-            fun readTimestamp() = if (track.getTimestamp(timestamp)) FrameTime(timestamp.framePosition, timestamp.nanoTime) else null
+            fun fetchTimestamp() = if (track.getTimestamp(timestamp)) FrameTime(timestamp.framePosition, timestamp.nanoTime) else null
 
             val out = ShortArray(chunk)
             var current = settings
@@ -96,7 +96,7 @@ class ClickTrackPlayer {
                 }
                 val now = System.nanoTime()
                 if (stamp == null) {
-                    wait.offer(readTimestamp(), now, FrameTime(0, startNanos))?.let { (found, isMeasured) ->
+                    wait.offer(fetchTimestamp(), now, FrameTime(0, startNanos))?.let { (found, isMeasured) ->
                         stamp = found
                         measured = isMeasured
                         lastRead = found.takeIf { isMeasured }
@@ -114,7 +114,7 @@ class ClickTrackPlayer {
                     routingChanged = false
                     lastResync = now
                     // Only a timestamp that moved on since the last one is trusted, as at the start.
-                    val fresh = readTimestamp()
+                    val fresh = fetchTimestamp()
                     val previous = lastRead
                     if (fresh != null && (previous == null || (fresh.frame > previous.frame && fresh.nanos > previous.nanos))) {
                         if (previous != null) {

@@ -10,13 +10,13 @@ class MetronomeSettingsStore(context: Context) {
     fun load(): MetronomeSettings {
         val defaults = MetronomeSettings()
         return MetronomeSettings(
-            useForRecording = readOrNull { preferences.getBoolean(USE_FOR_RECORDING, defaults.useForRecording) }
+            useForRecording = getOrNull { preferences.getBoolean(USE_FOR_RECORDING, defaults.useForRecording) }
                 ?: defaults.useForRecording,
-            bpm = readOrNull { preferences.getInt(BPM, defaults.bpm) }
+            bpm = getOrNull { preferences.getInt(BPM, defaults.bpm) }
                 ?.takeIf { it in METRONOME_MIN_BPM..METRONOME_MAX_BPM } ?: defaults.bpm,
-            beatsPerBar = readOrNull { preferences.getInt(BEATS_PER_BAR, defaults.beatsPerBar) }
+            beatsPerBar = getOrNull { preferences.getInt(BEATS_PER_BAR, defaults.beatsPerBar) }
                 ?.takeIf { it in METRONOME_BEATS_PER_BAR } ?: defaults.beatsPerBar,
-            clickOn = readOrNull { preferences.getBoolean(CLICK_ON, defaults.clickOn) } ?: defaults.clickOn,
+            clickOn = getOrNull { preferences.getBoolean(CLICK_ON, defaults.clickOn) } ?: defaults.clickOn,
         )
     }
 
@@ -30,8 +30,8 @@ class MetronomeSettingsStore(context: Context) {
     }
 
     // A value stored under the same key with another type throws ClassCastException.
-    private fun <T> readOrNull(read: () -> T): T? = try {
-        read()
+    private fun <T> getOrNull(get: () -> T): T? = try {
+        get()
     } catch (_: ClassCastException) {
         null
     }
