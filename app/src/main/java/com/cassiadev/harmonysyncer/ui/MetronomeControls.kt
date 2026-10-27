@@ -45,8 +45,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -145,12 +147,14 @@ fun MetronomeSheet(
             SwitchRow(stringResource(R.string.metronome_use), settings.useForRecording) {
                 onChange(settings.copy(useForRecording = it))
             }
+            // TalkBack reads the value with each button, as the timing slider does; the large number is not a stop.
+            val bpmValue = stringResource(R.string.bpm_value, settings.bpm)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("BPM", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 FilledTonalIconButton(
                     onClick = { onChange(settings.copy(bpm = settings.bpm - 1)) },
                     enabled = settings.bpm > METRONOME_MIN_BPM,
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(48.dp).semantics { stateDescription = bpmValue },
                 ) { Icon(painterResource(R.drawable.ic_remove), contentDescription = stringResource(R.string.bpm_decrease)) }
                 Text(
                     "${settings.bpm}",
@@ -158,12 +162,12 @@ fun MetronomeSheet(
                     lineHeight = 30.sp,
                     fontFamily = FontFamily.Monospace,
                     textAlign = TextAlign.Center,
-                    modifier = Modifier.widthIn(min = 64.dp),
+                    modifier = Modifier.widthIn(min = 64.dp).clearAndSetSemantics {},
                 )
                 FilledTonalIconButton(
                     onClick = { onChange(settings.copy(bpm = settings.bpm + 1)) },
                     enabled = settings.bpm < METRONOME_MAX_BPM,
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(48.dp).semantics { stateDescription = bpmValue },
                 ) { Icon(painterResource(R.drawable.ic_add), contentDescription = stringResource(R.string.bpm_increase)) }
             }
             val taps = remember { ArrayList<Long>() }

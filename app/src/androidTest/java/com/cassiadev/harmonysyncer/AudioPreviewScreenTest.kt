@@ -430,6 +430,20 @@ class AudioPreviewScreenTest {
     }
 
     @Test
+    fun bpmButtonsReadTheValue() {
+        val state = show(PreviewUiState(metronome = MetronomeSettings(bpm = 97)))
+        openMetronomeSheet()
+
+        compose.onNode(hasContentDescription("BPM 낮추기") and hasStateDescription("97 BPM")).assertExists()
+        compose.onNode(hasContentDescription("BPM 높이기") and hasStateDescription("97 BPM")).assertExists()
+        // The large number is read through the buttons, not as a separate stop.
+        compose.onNodeWithText("97").assertDoesNotExist()
+
+        state.value = state.value.copy(metronome = MetronomeSettings(bpm = 98))
+        compose.onNode(hasContentDescription("BPM 높이기") and hasStateDescription("98 BPM")).assertExists()
+    }
+
+    @Test
     fun startButtonFollowsThePhase() {
         var starts = 0
         val state = show(PreviewUiState(), onStartMetronome = { starts++ })

@@ -63,6 +63,7 @@
     <string name="metronome_use">녹음할 때 사용</string>
     <string name="bpm_decrease">BPM 낮추기</string>
     <string name="bpm_increase">BPM 높이기</string>
+    <string name="bpm_value">%1$d BPM</string>
     <string name="tap_tempo">탭 템포</string>
     <string name="beats_per_bar">한 마디</string>
     <string name="beats_value">%1$d박</string>
