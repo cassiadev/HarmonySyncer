@@ -157,7 +157,7 @@ private const val SETTLE_LIMIT_NANOS = NANOS_PER_SECOND
  * Keeps clicks quiet while the output timestamps settle: after a route change, or when a reading moves the click grid
  * by more than 2 ms, until two readings in a row agree. Changing outputs stalls the track and its timestamps take
  * about half a second to steady, so the clicks in between would land off the beat. Quiet lasts at most a second, for
- * a device whose readings never agree.
+ * a device whose readings never agree or never come: the player calls [endIfTooLong] on every chunk.
  */
 class ClickGridSettle {
     var settling = false
@@ -179,8 +179,12 @@ class ClickGridSettle {
         }
         val last = lastMeasured
         lastMeasured = measured
-        val agreed = last != null && !shouldMoveClickFrame(last, measured, sampleRate)
-        if (agreed || nowNanos - sinceNanos >= SETTLE_LIMIT_NANOS) settling = false
+        if (last != null && !shouldMoveClickFrame(last, measured, sampleRate)) settling = false
         return measured
+    }
+
+    /** Ends the quiet a second after it began, whether or not readings arrived. */
+    fun endIfTooLong(nowNanos: Long) {
+        if (settling && nowNanos - sinceNanos >= SETTLE_LIMIT_NANOS) settling = false
     }
 }

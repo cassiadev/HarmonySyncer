@@ -169,9 +169,23 @@ class ClickTrackTest {
         val settle = ClickGridSettle()
         settle.startSettling(nowNanos = 0)
         settle.onMeasured(10_000, 11_000, rate, nowNanos = 500_000_000)
+        settle.endIfTooLong(nowNanos = 500_000_000)
         assertTrue(settle.settling)
 
-        settle.onMeasured(11_000, 12_000, rate, nowNanos = 1_000_000_000)
+        settle.onMeasured(11_000, 12_000, rate, nowNanos = 900_000_000)
+        settle.endIfTooLong(nowNanos = 1_000_000_000)
+        assertFalse(settle.settling)
+    }
+
+    @Test
+    fun `clicks come back after a second without any reading`() {
+        // No timestamp at all, or one that stopped moving: the player never calls onMeasured.
+        val settle = ClickGridSettle()
+        settle.startSettling(nowNanos = 0)
+
+        settle.endIfTooLong(nowNanos = 999_999_999)
+        assertTrue(settle.settling)
+        settle.endIfTooLong(nowNanos = 1_000_000_000)
         assertFalse(settle.settling)
     }
 

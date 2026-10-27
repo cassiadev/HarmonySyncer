@@ -96,6 +96,7 @@ class ClickTrackPlayer {
                     countInNanos = null
                 }
                 val now = System.nanoTime()
+                settle.endIfTooLong(now)
                 if (stamp == null) {
                     wait.offer(fetchTimestamp(), now, FrameTime(0, startNanos))?.let { (found, isMeasured) ->
                         stamp = found
