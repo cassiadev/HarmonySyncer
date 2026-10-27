@@ -21,8 +21,9 @@ private const val TAP_RESET_NANOS = 2 * NANOS_PER_SECOND
 private const val TAP_INTERVALS = 4
 private const val TIMESTAMP_WAIT_NANOS = NANOS_PER_SECOND
 
+/** Recording uses the metronome unless turned off, so its beats show from the first take (user decision). */
 data class MetronomeSettings(
-    val useForRecording: Boolean = false,
+    val useForRecording: Boolean = true,
     val bpm: Int = 120,
     val beatsPerBar: Int = 4,
     val clickOn: Boolean = true,

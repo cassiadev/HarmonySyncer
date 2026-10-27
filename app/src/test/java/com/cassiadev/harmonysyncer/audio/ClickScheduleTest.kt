@@ -98,6 +98,11 @@ class ClickScheduleTest {
     }
 
     @Test
+    fun `recording uses the metronome by default`() {
+        assertTrue(MetronomeSettings().useForRecording)
+    }
+
+    @Test
     fun `settings reject values outside the range`() {
         assertThrows(IllegalArgumentException::class.java) { MetronomeSettings(bpm = 39) }
         assertThrows(IllegalArgumentException::class.java) { MetronomeSettings(bpm = 241) }

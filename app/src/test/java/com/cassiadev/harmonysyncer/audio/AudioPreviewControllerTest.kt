@@ -1015,7 +1015,11 @@ class AudioPreviewControllerTest {
         harness.controller.close()
     }
 
-    private class FakeAudioHarness(private val testScope: TestScope, metronome: MetronomeSettings = MetronomeSettings()) {
+    // Without a metronome unless a test asks for one: most recording tests predate it.
+    private class FakeAudioHarness(
+        private val testScope: TestScope,
+        metronome: MetronomeSettings = MetronomeSettings(useForRecording = false),
+    ) {
         private val dispatcher = StandardTestDispatcher(testScope.testScheduler)
         val ownedJob = SupervisorJob()
         val renderRequests = mutableListOf<RenderRequest>()

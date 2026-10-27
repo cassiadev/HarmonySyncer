@@ -398,7 +398,7 @@ class AudioPreviewScreenTest {
     fun metronomeRowShowsSettingsAndOpensTheSheet() {
         show(PreviewUiState())
 
-        compose.onNodeWithText("메트로놈 · 120 BPM · 4박 · 끔").assertExists()
+        compose.onNodeWithText("메트로놈 · 120 BPM · 4박 · 켬").assertExists()
         openMetronomeSheet()
 
         compose.onNodeWithText("녹음할 때 사용").assertExists()
