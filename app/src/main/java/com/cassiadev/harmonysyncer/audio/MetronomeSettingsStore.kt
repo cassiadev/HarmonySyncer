@@ -9,14 +9,13 @@ class MetronomeSettingsStore(context: Context) {
 
     fun load(): MetronomeSettings {
         val defaults = MetronomeSettings()
+        // Read by type from the stored map: getInt and getBoolean throw on a value stored with another type.
+        val stored = preferences.all
         return MetronomeSettings(
-            useForRecording = getOrNull { preferences.getBoolean(USE_FOR_RECORDING, defaults.useForRecording) }
-                ?: defaults.useForRecording,
-            bpm = getOrNull { preferences.getInt(BPM, defaults.bpm) }
-                ?.takeIf { it in METRONOME_MIN_BPM..METRONOME_MAX_BPM } ?: defaults.bpm,
-            beatsPerBar = getOrNull { preferences.getInt(BEATS_PER_BAR, defaults.beatsPerBar) }
-                ?.takeIf { it in METRONOME_BEATS_PER_BAR } ?: defaults.beatsPerBar,
-            clickOn = getOrNull { preferences.getBoolean(CLICK_ON, defaults.clickOn) } ?: defaults.clickOn,
+            useForRecording = stored[USE_FOR_RECORDING] as? Boolean ?: defaults.useForRecording,
+            bpm = (stored[BPM] as? Int)?.takeIf { it in METRONOME_MIN_BPM..METRONOME_MAX_BPM } ?: defaults.bpm,
+            beatsPerBar = (stored[BEATS_PER_BAR] as? Int)?.takeIf { it in METRONOME_BEATS_PER_BAR } ?: defaults.beatsPerBar,
+            clickOn = stored[CLICK_ON] as? Boolean ?: defaults.clickOn,
         )
     }
 
@@ -27,13 +26,6 @@ class MetronomeSettingsStore(context: Context) {
             putInt(BEATS_PER_BAR, settings.beatsPerBar)
             putBoolean(CLICK_ON, settings.clickOn)
         }
-    }
-
-    // A value stored under the same key with another type throws ClassCastException.
-    private fun <T> getOrNull(get: () -> T): T? = try {
-        get()
-    } catch (_: ClassCastException) {
-        null
     }
 
     private companion object {
