@@ -404,7 +404,8 @@ class AudioPreviewController internal constructor(
                 endMetronomeSession()
                 beginMetronome(settings)
             }
-            settings.clickOn -> {
+            // metronomeStop is null once a click track has failed; its session shows beats only.
+            settings.clickOn && metronomeStop != null -> {
                 state = state.copy(phase = PreviewPhase.Metronome(null))
                 restartClicks(settings)
             }
@@ -447,6 +448,9 @@ class AudioPreviewController internal constructor(
                 throw cancellation
             } catch (_: Exception) {
                 // Without a click track the beats still show, as in a take whose clicks failed.
+                scope.launch {
+                    if (session == metronomeSession) metronomeStop = null
+                }
                 showBeatsFrom(nanoTime() + COUNT_IN_LEAD_NANOS)
             }
         }

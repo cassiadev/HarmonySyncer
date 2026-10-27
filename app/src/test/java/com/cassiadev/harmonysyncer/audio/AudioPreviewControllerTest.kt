@@ -965,6 +965,24 @@ class AudioPreviewControllerTest {
     }
 
     @Test
+    fun `standalone metronome keeps showing beats after its click track fails`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.clickFailure = IllegalStateException("이 기기에서 클릭음을 재생할 수 없습니다.")
+        harness.now = 1_000_000_000
+        harness.controller.startMetronome()
+        runCurrent()
+        assertEquals(PreviewPhase.Metronome(1_150_000_000), harness.controller.state.phase)
+
+        harness.now = 2_000_000_000
+        harness.controller.updateMetronome(MetronomeSettings(bpm = 90))
+
+        assertEquals(PreviewPhase.Metronome(2_150_000_000), harness.controller.state.phase)
+        assertTrue(harness.restartCalls.isEmpty())
+        harness.controller.stop()
+        harness.controller.close()
+    }
+
+    @Test
     fun `close stops a running metronome`() = runTest {
         val harness = FakeAudioHarness(this)
         harness.controller.startMetronome()
@@ -1025,6 +1043,8 @@ class AudioPreviewControllerTest {
         val clickStarts = mutableListOf<(Long) -> Unit>()
         val clickRecording = mutableListOf<Boolean>()
         val restartCalls = mutableListOf<MetronomeSettings>()
+        /** Thrown by the fake click track as soon as it starts, like a device that cannot play it. */
+        var clickFailure: Exception? = null
         val controller = AudioPreviewController(
             scope = CoroutineScope(ownedJob + dispatcher),
             ioDispatcher = dispatcher,
@@ -1059,6 +1079,7 @@ class AudioPreviewControllerTest {
             saveMetronome = { savedMetronome += it },
             // Plays until told to stop, like the real blocking click track.
             playClicks = { _, recording, _, shouldStop, onCountInStart ->
+                clickFailure?.let { throw it }
                 clickRecording += recording
                 clickStops += shouldStop
                 clickStarts += onCountInStart
