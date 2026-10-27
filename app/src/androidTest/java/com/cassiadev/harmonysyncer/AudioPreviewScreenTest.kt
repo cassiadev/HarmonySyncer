@@ -402,7 +402,7 @@ class AudioPreviewScreenTest {
         openMetronomeSheet()
 
         compose.onNodeWithText("녹음할 때 사용").assertExists()
-        compose.onNodeWithText("탭 템포").assertExists()
+        compose.onNodeWithText("두드려서 BPM 정하기").assertExists()
         compose.onNodeWithText(CLICK_HINT).assertExists()
     }
 
