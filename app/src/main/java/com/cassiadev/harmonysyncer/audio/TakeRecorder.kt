@@ -3,6 +3,7 @@ package com.cassiadev.harmonysyncer.audio
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
@@ -10,6 +11,7 @@ import android.media.AudioRecordingConfiguration
 import android.media.AudioTimestamp
 import android.media.MediaRecorder
 import androidx.annotation.RequiresPermission
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 
 // 44.1 kHz is the only capture rate Android guarantees on every device.
@@ -24,6 +26,11 @@ internal fun chooseCaptureBufferBytes(sampleRate: Int, minBufferBytes: Int): Int
 
 /** Records one mono PCM16 take from the microphone through [readTake]. */
 class TakeRecorder(private val context: Context) {
+    // Read by device tests only, like ClickTrackPlayer's routing fields.
+    @VisibleForTesting
+    @Volatile internal var lastRoutedInputType: Int? = null
+        private set
+
     /**
      * Blocking; call on an IO thread. Throws [IllegalStateException] with a user message if it cannot record.
      * With an [anchor], completes its stamp from the capture timestamp and keeps only frames from its first frame.
@@ -50,6 +57,11 @@ class TakeRecorder(private val context: Context) {
         try {
             // Registered before starting, so silencing that applies from the first frame is not missed.
             record.registerAudioRecordingCallback(context.mainExecutor, callback)
+            // A headset microphone sits next to its earbuds and records the metronome clicks; the phone's own does not.
+            context.getSystemService(AudioManager::class.java).getDevices(AudioManager.GET_DEVICES_INPUTS)
+                .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
+                ?.let { record.setPreferredDevice(it) }
+            lastRoutedInputType = null
             record.startRecording()
             check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { MICROPHONE_UNAVAILABLE_MESSAGE }
             record.activeRecordingConfiguration?.let { silenced.report(it.isClientSilenced) }
@@ -71,6 +83,7 @@ class TakeRecorder(private val context: Context) {
                 onProgress = onProgress,
                 firstFrame = if (anchor == null) ({ 0L }) else ({ anchor.firstFrame }),
                 onRead = onRead@{ inputFrames ->
+                    if (lastRoutedInputType == null) lastRoutedInputType = record.routedDevice?.type
                     if (anchor == null || anchor.stamp.isCompleted) return@onRead
                     val now = System.nanoTime()
                     // Fallback: the newest frame read was captured about when the first read returned.
