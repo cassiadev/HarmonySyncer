@@ -87,6 +87,8 @@ class CountInLatencyDeviceTest {
             val report = "offsets ms ${offsetsMs.map { "%.2f".format(it) }}, spread %.2f ms".format(spread)
             Log.i("CountInLatency", report)
             println("CountInLatency: $report")
+            // Set with the user from the first measurement on a Galaxy M33: a 0.73 ms spread.
+            assertTrue("start-up delay left in the takes: $report", spread <= 5.0)
         }
     }
 
