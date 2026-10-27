@@ -53,14 +53,14 @@ class TakeRecorder(private val context: Context) {
             throw IllegalStateException(MICROPHONE_DENIED_MESSAGE)
         }
         val record = createAudioRecord() ?: throw IllegalStateException(MICROPHONE_UNAVAILABLE_MESSAGE)
-        // A new latch per take, so silencing in one take never stops the next.
-        val silenced = SilencingLatch()
+        // A new latch per take, so an interruption in one take never stops the next.
+        val interruptedTake = TakeInterruptionLatch()
         // A headset microphone sits next to its earbuds and records the metronome clicks; the phone's own does not.
         // The preference is only a request, so a take that is moved to another input stops like a silenced one.
         val builtInMic = context.getSystemService(AudioManager::class.java).getDevices(AudioManager.GET_DEVICES_INPUTS)
             .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
         fun report(config: AudioRecordingConfiguration) =
-            silenced.report(shouldInterruptTake(config.isClientSilenced, config.audioDevice?.type, builtInMic?.type))
+            interruptedTake.report(shouldInterruptTake(config.isClientSilenced, config.audioDevice?.type, builtInMic?.type))
         val callback = object : AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: List<AudioRecordingConfiguration>) {
                 configs.firstOrNull { it.clientAudioSessionId == record.audioSessionId }?.let(::report)
@@ -87,7 +87,7 @@ class TakeRecorder(private val context: Context) {
                     record.read(buffer, offset, count, AudioRecord.READ_NON_BLOCKING)
                 },
                 shouldStop = shouldStop,
-                isSilenced = { silenced.wasSilenced },
+                isInterrupted = { interruptedTake.wasInterrupted },
                 draft = openDraft(rate),
                 onProgress = onProgress,
                 firstFrame = if (anchor == null) ({ 0L }) else ({ anchor.firstFrame }),

@@ -7,15 +7,15 @@ private const val PROGRESS_STEP_MS = 100L
 enum class TakeStopReason { Requested, TimeLimit, Interrupted }
 
 /**
- * Remembers that a take was silenced, or moved off its microphone, at any point. The recording callback may report silenced and then
+ * Remembers that a take was interrupted (silenced, or moved off its microphone) at any point. The recording callback may report silenced and then
  * unsilenced before the reading thread looks again; the take must still stop as interrupted.
  */
-class SilencingLatch {
-    @Volatile var wasSilenced = false
+class TakeInterruptionLatch {
+    @Volatile var wasInterrupted = false
         private set
 
-    fun report(silenced: Boolean) {
-        if (silenced) wasSilenced = true
+    fun report(interrupted: Boolean) {
+        if (interrupted) wasInterrupted = true
     }
 }
 
@@ -36,7 +36,7 @@ class TakeAnchor {
 
 /**
  * Reads microphone chunks through [read] into one buffer and into [draft] until [shouldStop] or
- * [isSilenced] turns true, [maxFrames] fill the buffer, or [read] fails. A failure before the first
+ * [isInterrupted] turns true, [maxFrames] fill the buffer, or [read] fails. A failure before the first
  * frame means the microphone never delivered audio: the draft is removed and nothing is returned.
  * On a stop request, [readAvailable] (non-blocking) collects audio already captured but not yet read.
  * Input frames before [firstFrame] (all of them while it is null) are dropped from the buffer and the draft;
@@ -49,7 +49,7 @@ fun readTake(
     read: (buffer: ShortArray, offset: Int, count: Int) -> Int,
     readAvailable: (buffer: ShortArray, offset: Int, count: Int) -> Int,
     shouldStop: () -> Boolean,
-    isSilenced: () -> Boolean,
+    isInterrupted: () -> Boolean,
     draft: RecordingDraft?,
     onProgress: (elapsedMs: Long) -> Unit,
     firstFrame: () -> Long? = { 0L },
@@ -89,7 +89,7 @@ fun readTake(
                 // Checked before a stop request: a stopped take that was silenced from the start must not save
                 // the silenced samples left in the buffer. Silenced from the start usually means another app holds
                 // the microphone (Android 10+).
-                if (isSilenced()) {
+                if (isInterrupted()) {
                     if (inputFrames > 0) return@run TakeStopReason.Interrupted
                     failWithoutAudio()
                 }
