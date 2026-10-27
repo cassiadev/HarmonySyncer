@@ -24,6 +24,13 @@ private val RECORDING_SAMPLE_RATES = intArrayOf(48_000, 44_100)
 internal fun chooseCaptureBufferBytes(sampleRate: Int, minBufferBytes: Int): Int =
     maxOf(minBufferBytes, sampleRate * Short.SIZE_BYTES)
 
+/**
+ * Whether a recording configuration ends the take: it was silenced, or it moved off [requiredInputType], the
+ * microphone the recorder asked for. A device not yet known keeps the take going.
+ */
+internal fun shouldInterruptTake(silenced: Boolean, inputType: Int?, requiredInputType: Int?): Boolean =
+    silenced || (requiredInputType != null && inputType != null && inputType != requiredInputType)
+
 /** Records one mono PCM16 take from the microphone through [readTake]. */
 class TakeRecorder(private val context: Context) {
     // Read by device tests only, like ClickTrackPlayer's routing fields.
@@ -48,23 +55,25 @@ class TakeRecorder(private val context: Context) {
         val record = createAudioRecord() ?: throw IllegalStateException(MICROPHONE_UNAVAILABLE_MESSAGE)
         // A new latch per take, so silencing in one take never stops the next.
         val silenced = SilencingLatch()
+        // A headset microphone sits next to its earbuds and records the metronome clicks; the phone's own does not.
+        // The preference is only a request, so a take that is moved to another input stops like a silenced one.
+        val builtInMic = context.getSystemService(AudioManager::class.java).getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
+        fun report(config: AudioRecordingConfiguration) =
+            silenced.report(shouldInterruptTake(config.isClientSilenced, config.audioDevice?.type, builtInMic?.type))
         val callback = object : AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: List<AudioRecordingConfiguration>) {
-                configs.firstOrNull { it.clientAudioSessionId == record.audioSessionId }
-                    ?.let { silenced.report(it.isClientSilenced) }
+                configs.firstOrNull { it.clientAudioSessionId == record.audioSessionId }?.let(::report)
             }
         }
         try {
             // Registered before starting, so silencing that applies from the first frame is not missed.
             record.registerAudioRecordingCallback(context.mainExecutor, callback)
-            // A headset microphone sits next to its earbuds and records the metronome clicks; the phone's own does not.
-            context.getSystemService(AudioManager::class.java).getDevices(AudioManager.GET_DEVICES_INPUTS)
-                .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
-                ?.let { record.setPreferredDevice(it) }
+            builtInMic?.let { record.setPreferredDevice(it) }
             lastRoutedInputType = null
             record.startRecording()
             check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { MICROPHONE_UNAVAILABLE_MESSAGE }
-            record.activeRecordingConfiguration?.let { silenced.report(it.isClientSilenced) }
+            record.activeRecordingConfiguration?.let(::report)
             val rate = record.sampleRate
             val timestamp = AudioTimestamp()
             var wait: TimestampWait? = null

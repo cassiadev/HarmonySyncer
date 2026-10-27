@@ -7,7 +7,7 @@ private const val PROGRESS_STEP_MS = 100L
 enum class TakeStopReason { Requested, TimeLimit, Interrupted }
 
 /**
- * Remembers that a take was silenced at any point. The recording callback may report silenced and then
+ * Remembers that a take was silenced, or moved off its microphone, at any point. The recording callback may report silenced and then
  * unsilenced before the reading thread looks again; the take must still stop as interrupted.
  */
 class SilencingLatch {

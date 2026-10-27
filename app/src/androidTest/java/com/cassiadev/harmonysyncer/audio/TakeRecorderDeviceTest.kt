@@ -86,9 +86,11 @@ class TakeRecorderDeviceTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             val recorder = TakeRecorder(context)
             val start = System.nanoTime()
-            recorder.record(openDraft = { null }, shouldStop = { System.nanoTime() - start > 1_000_000_000L }, onProgress = {})
+            val take = recorder.record(openDraft = { null }, shouldStop = { System.nanoTime() - start > 1_000_000_000L }, onProgress = {})
 
             assertEquals(AudioDeviceInfo.TYPE_BUILTIN_MIC, recorder.lastRoutedInputType)
+            // The input check must not stop a take that stayed on the built-in microphone.
+            assertEquals(TakeStopReason.Requested, take.stopReason)
         }
     }
 }
