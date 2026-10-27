@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -181,21 +182,7 @@ fun MetronomeSheet(
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) { Text(stringResource(R.string.tap_tempo)) }
             Text(stringResource(R.string.beats_per_bar), style = MaterialTheme.typography.bodyLarge)
-            Row(modifier = Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (beats in METRONOME_BEATS_PER_BAR) {
-                    val selected = settings.beatsPerBar == beats
-                    Row(
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .selectable(selected = selected, role = Role.RadioButton) { onChange(settings.copy(beatsPerBar = beats)) }
-                            .padding(end = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = selected, onClick = null)
-                        Text(stringResource(R.string.beats_value, beats), modifier = Modifier.padding(start = 4.dp))
-                    }
-                }
-            }
+            BeatsPerBarChoice(settings.beatsPerBar) { onChange(settings.copy(beatsPerBar = it)) }
             SwitchRow(stringResource(R.string.click_sound), settings.clickOn) { onChange(settings.copy(clickOn = it)) }
             Text(
                 stringResource(R.string.click_hint),
@@ -207,6 +194,26 @@ fun MetronomeSheet(
                 onClick = if (running != null) onStop else onStart,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
             ) { Text(stringResource(if (running != null) R.string.metronome_stop else R.string.metronome_start)) }
+        }
+    }
+}
+
+/** The 2·3·4·6 beats-per-bar radio options; they wrap so a large font keeps every option whole. */
+@Composable
+internal fun BeatsPerBarChoice(beatsPerBar: Int, onSelect: (Int) -> Unit) {
+    FlowRow(modifier = Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (beats in METRONOME_BEATS_PER_BAR) {
+            val selected = beatsPerBar == beats
+            Row(
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .selectable(selected = selected, role = Role.RadioButton) { onSelect(beats) }
+                    .padding(end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = selected, onClick = null)
+                Text(stringResource(R.string.beats_value, beats), modifier = Modifier.padding(start = 4.dp))
+            }
         }
     }
 }

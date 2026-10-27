@@ -2,11 +2,15 @@ package com.cassiadev.harmonysyncer
 
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.semantics.SemanticsActions
@@ -36,6 +40,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso
 import com.cassiadev.harmonysyncer.audio.AUDIO_TOO_LONG_MESSAGE
 import com.cassiadev.harmonysyncer.audio.ClipInfo
@@ -47,6 +53,7 @@ import com.cassiadev.harmonysyncer.audio.RECORDING_INTERRUPTED_NOTICE
 import com.cassiadev.harmonysyncer.audio.TrackSlot
 import com.cassiadev.harmonysyncer.ui.AudioPreviewScreen
 import com.cassiadev.harmonysyncer.ui.AudioPreviewTags
+import com.cassiadev.harmonysyncer.ui.BeatsPerBarChoice
 import com.cassiadev.harmonysyncer.ui.theme.HarmonySyncerTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -441,6 +448,24 @@ class AudioPreviewScreenTest {
 
         state.value = state.value.copy(metronome = MetronomeSettings(bpm = 98))
         compose.onNode(hasContentDescription("BPM 높이기") and hasStateDescription("98 BPM")).assertExists()
+    }
+
+    @Test
+    fun beatsPerBarOptionsFitALargeFontOnANarrowSheet() {
+        val selected = mutableListOf<Int>()
+        compose.setContent {
+            HarmonySyncerTheme {
+                // 200% font on a sheet narrower than a 360 dp phone's.
+                CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale = 2f)) {
+                    Box(modifier = Modifier.width(300.dp)) { BeatsPerBarChoice(beatsPerBar = 4) { selected += it } }
+                }
+            }
+        }
+
+        val widths = listOf("2박", "3박", "4박", "6박").map { compose.onNodeWithText(it).fetchSemanticsNode().size.width }
+        assertTrue("option widths $widths", widths.all { it == widths.first() })
+        compose.onNodeWithText("6박").performClick()
+        assertEquals(listOf(6), selected)
     }
 
     @Test
