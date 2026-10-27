@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
@@ -45,10 +46,20 @@ sealed interface PreviewPhase {
     data object LoadingSample : PreviewPhase
     data object Rendering : PreviewPhase
     data object Playing : PreviewPhase
-    /** Recording into [slot]; [elapsedMs] counts the audio captured so far. */
-    data class Recording(val slot: TrackSlot, val elapsedMs: Long) : PreviewPhase
+    /**
+     * Recording into [slot]; [elapsedMs] counts the audio kept so far. A metronome take carries its frozen
+     * [metronome] settings and, once decided, the `System.nanoTime()` of its first count-in beat.
+     */
+    data class Recording(
+        val slot: TrackSlot,
+        val elapsedMs: Long,
+        val metronome: MetronomeSettings? = null,
+        val countInStartNanos: Long? = null,
+    ) : PreviewPhase
     /** Saving the finished take of [slot] to shared storage. */
     data class SavingRecording(val slot: TrackSlot) : PreviewPhase
+    /** The metronome running on its own; [startNanos] is its first beat, null until the click track has one. */
+    data class Metronome(val startNanos: Long?) : PreviewPhase
 }
 
 data class PreviewUiState(
@@ -61,6 +72,7 @@ data class PreviewUiState(
     val failedSlot: TrackSlot? = null,
     /** Information that is not an error, such as a take saved after an interruption. */
     val notice: String? = null,
+    val metronome: MetronomeSettings = MetronomeSettings(),
 ) {
     val isLoading: Boolean get() = phase is PreviewPhase.Loading || phase == PreviewPhase.LoadingSample
     val isPlaying: Boolean get() = phase == PreviewPhase.Rendering || phase == PreviewPhase.Playing
@@ -85,12 +97,28 @@ class AudioPreviewController internal constructor(
     },
     // The identity is always correct: render still resamples clips that were not normalized.
     private val normalize: suspend (PcmClip, PcmClip) -> Pair<PcmClip, PcmClip> = { a, b -> a to b },
-    private val recordTake: suspend (baseName: String, shouldStop: () -> Boolean, onProgress: (Long) -> Unit) -> RecordedTake =
-        { _, _, _ -> error("No recorder in this controller") },
+    private val recordTake: suspend (
+        baseName: String,
+        shouldStop: () -> Boolean,
+        onProgress: (Long) -> Unit,
+        anchor: TakeAnchor?,
+    ) -> RecordedTake = { _, _, _, _ -> error("No recorder in this controller") },
     private val saveRecording: suspend (displayName: String, wav: ByteArray) -> Unit =
         { _, _ -> error("No recording store in this controller") },
     private val recoverRecordings: suspend () -> Int = { 0 },
     private val currentTime: () -> LocalDateTime = LocalDateTime::now,
+    loadMetronome: () -> MetronomeSettings = { MetronomeSettings() },
+    private val saveMetronome: (MetronomeSettings) -> Unit = {},
+    /** Blocks until `shouldStop`; see [ClickTrackPlayer.play]. */
+    private val playClicks: suspend (
+        settings: MetronomeSettings,
+        recording: Boolean,
+        isArmed: () -> Boolean,
+        shouldStop: () -> Boolean,
+        onCountInStart: (Long) -> Unit,
+    ) -> Unit = { _, _, _, _, _ -> error("No click track in this controller") },
+    private val restartClicks: (MetronomeSettings) -> Unit = {},
+    private val nanoTime: () -> Long = System::nanoTime,
 ) {
     constructor(context: Context) : this(createDependencies(context))
 
@@ -111,14 +139,20 @@ class AudioPreviewController internal constructor(
             val context = currentCoroutineContext()
             normalizePreviewRates(a, b, checkActive = { context.ensureActive() })
         },
-        recordTake = { baseName, shouldStop, onProgress ->
-            dependencies.recorder.record({ rate -> dependencies.drafts.create(baseName, rate) }, shouldStop, onProgress)
+        recordTake = { baseName, shouldStop, onProgress, anchor ->
+            dependencies.recorder.record({ rate -> dependencies.drafts.create(baseName, rate) }, shouldStop, onProgress, anchor)
         },
         saveRecording = { name, wav -> dependencies.store.save(name, wav) },
         recoverRecordings = { saveLeftoverDrafts(dependencies.drafts) { name, wav -> dependencies.store.save(name, wav) } },
+        loadMetronome = dependencies.metronomeStore::load,
+        saveMetronome = dependencies.metronomeStore::save,
+        playClicks = { settings, recording, isArmed, shouldStop, onCountInStart ->
+            dependencies.clicks.play(settings, recording, isArmed, shouldStop) { nanos, _ -> onCountInStart(nanos) }
+        },
+        restartClicks = dependencies.clicks::restart,
     )
 
-    var state by mutableStateOf(PreviewUiState())
+    var state by mutableStateOf(PreviewUiState(metronome = loadMetronome()))
         private set
 
     private var clipA: PcmClip? = null
@@ -138,6 +172,9 @@ class AudioPreviewController internal constructor(
     private var recoveredDuringTake = 0
     // The recorder polls this from its IO thread; only the first request of a take counts.
     @Volatile private var stopRequest: StopRequest? = null
+    /** Counts standalone metronome sessions, so an ended click track cannot move the beats of the next. */
+    private var metronomeSession = 0L
+    private var metronomeStop: AtomicBoolean? = null
     private var closed = false
 
     private enum class StopRequest { User, Interruption }
@@ -227,11 +264,13 @@ class AudioPreviewController internal constructor(
     fun startRecording(slot: TrackSlot) {
         if (closed || !state.canEdit) return
         val baseName = buildRecordingBaseName(slot, currentTime())
+        // Frozen for this take: later changes to the settings do not move its beats.
+        val metronome = state.metronome.takeIf { it.useForRecording }
         stopRequest = null
-        state = state.copy(phase = PreviewPhase.Recording(slot, 0), error = null, failedSlot = null, notice = null)
+        state = state.copy(phase = PreviewPhase.Recording(slot, 0, metronome), error = null, failedSlot = null, notice = null)
         recordingJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                val outcome = withContext(ioDispatcher + NonCancellable) { recordAndSave(slot, baseName) }
+                val outcome = withContext(ioDispatcher + NonCancellable) { recordAndSave(slot, baseName, metronome) }
                 if (closed || outcome == null) return@launch
                 applyLoaded(listOf(slot to outcome.file), isSample = false)
                 state = if (!outcome.saved) {
@@ -265,18 +304,34 @@ class AudioPreviewController internal constructor(
         recordingJob?.start()
     }
 
-    /** Runs on IO; null for a take without samples. Phase changes are posted back to [scope]. */
-    private suspend fun recordAndSave(slot: TrackSlot, baseName: String): RecordingOutcome? {
-        val take = recordTake(baseName, { stopRequest != null }) { elapsedMs ->
+    /** Runs on IO; null for a take without samples or shorter than its count-in. Phase changes are posted back to [scope]. */
+    private suspend fun recordAndSave(slot: TrackSlot, baseName: String, metronome: MetronomeSettings?): RecordingOutcome? {
+        fun updateRecording(change: (PreviewPhase.Recording) -> PreviewPhase.Recording) {
             scope.launch {
                 val phase = state.phase
-                if (phase is PreviewPhase.Recording && phase.slot == slot) {
-                    state = state.copy(phase = PreviewPhase.Recording(slot, elapsedMs))
-                }
+                if (phase is PreviewPhase.Recording && phase.slot == slot) state = state.copy(phase = change(phase))
             }
         }
+        val shouldStop = { stopRequest != null }
+        val onProgress = { elapsedMs: Long -> updateRecording { it.copy(elapsedMs = elapsedMs) } }
+        val take = if (metronome == null) {
+            recordTake(baseName, shouldStop, onProgress, null)
+        } else {
+            recordWithCountIn(
+                clickDispatcher = ioDispatcher,
+                recordTake = { anchor -> recordTake(baseName, shouldStop, onProgress, anchor) },
+                playClicks = if (metronome.clickOn) {
+                    { isArmed, stopClicks, onCountInStart -> playClicks(metronome, true, isArmed, stopClicks, onCountInStart) }
+                } else {
+                    null
+                },
+                nanoTime = nanoTime,
+            ) { start -> updateRecording { it.copy(countInStartNanos = start) } }
+        }
         val draft = take.draft
-        if (take.clip.samples.isEmpty()) {
+        // A take that stops before its count-in ends holds no singing: discarded like an empty one (design 2).
+        val countInFrames = metronome?.let { clickFrameAt(it.beatsPerBar.toLong(), it.bpm, take.clip.sampleRate) } ?: 0L
+        if (take.clip.samples.isEmpty() || take.clip.samples.size < countInFrames) {
             draft?.delete()
             draft?.release()
             return null
@@ -330,6 +385,82 @@ class AudioPreviewController internal constructor(
                 state = state.copy(notice = buildRecoveredNotice(count))
             }
         }
+    }
+
+    /**
+     * Saves new metronome settings. A running standalone metronome starts again from a new first beat, even with
+     * equal settings, so a tap tempo lands its beat on the last tap; turning clicks on or off starts or ends its
+     * click track.
+     */
+    fun updateMetronome(settings: MetronomeSettings) {
+        val running = state.phase is PreviewPhase.Metronome
+        if (closed || (!running && !state.canEdit)) return
+        val previous = state.metronome
+        state = state.copy(metronome = settings, error = null, failedSlot = null, notice = null)
+        saveMetronome(settings)
+        if (!running) return
+        when {
+            settings.clickOn != previous.clickOn -> {
+                endMetronomeSession()
+                beginMetronome(settings)
+            }
+            // metronomeStop is null once a click track has failed; its session shows beats only.
+            settings.clickOn && metronomeStop != null -> {
+                state = state.copy(phase = PreviewPhase.Metronome(null))
+                restartClicks(settings)
+            }
+            else -> state = state.copy(phase = PreviewPhase.Metronome(nanoTime() + COUNT_IN_LEAD_NANOS))
+        }
+    }
+
+    fun startMetronome() {
+        if (closed || !state.canEdit) return
+        state = state.copy(error = null, failedSlot = null, notice = null)
+        beginMetronome(state.metronome)
+    }
+
+    fun stopMetronome() {
+        if (state.phase !is PreviewPhase.Metronome) return
+        endMetronomeSession()
+        state = state.copy(phase = PreviewPhase.Idle)
+    }
+
+    private fun beginMetronome(settings: MetronomeSettings) {
+        val session = ++metronomeSession
+        if (!settings.clickOn) {
+            state = state.copy(phase = PreviewPhase.Metronome(nanoTime() + COUNT_IN_LEAD_NANOS))
+            return
+        }
+        state = state.copy(phase = PreviewPhase.Metronome(null))
+        val stop = AtomicBoolean(false)
+        metronomeStop = stop
+        fun showBeatsFrom(start: Long) {
+            scope.launch {
+                if (session == metronomeSession && state.phase is PreviewPhase.Metronome) {
+                    state = state.copy(phase = PreviewPhase.Metronome(start))
+                }
+            }
+        }
+        scope.launch(ioDispatcher) {
+            try {
+                playClicks(settings, false, { true }, stop::get, ::showBeatsFrom)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (_: Exception) {
+                // Without a click track the beats still show, as in a take whose clicks failed.
+                scope.launch {
+                    if (session == metronomeSession) metronomeStop = null
+                }
+                showBeatsFrom(nanoTime() + COUNT_IN_LEAD_NANOS)
+            }
+        }
+    }
+
+    /** Tells the click track to stop; it ends its blocking loop on its own thread. */
+    private fun endMetronomeSession() {
+        metronomeSession++
+        metronomeStop?.set(true)
+        metronomeStop = null
     }
 
     fun updateSettings(settings: MixSettings) {
@@ -394,6 +525,7 @@ class AudioPreviewController internal constructor(
     }
 
     fun stop() {
+        stopMetronome()
         playbackSession++
         playbackJob?.cancel()
         playbackJob = null
@@ -429,6 +561,8 @@ class AudioPreviewController internal constructor(
         val recorder: TakeRecorder,
         val store: RecordingStore,
         val drafts: RecordingDrafts,
+        val clicks: ClickTrackPlayer,
+        val metronomeStore: MetronomeSettingsStore,
     )
 
     private companion object {
@@ -440,6 +574,8 @@ class AudioPreviewController internal constructor(
             recorder = TakeRecorder(context.applicationContext),
             store = RecordingStore(context.applicationContext.contentResolver),
             drafts = RecordingDrafts(File(context.applicationContext.filesDir, "recordings-in-progress")),
+            clicks = ClickTrackPlayer(),
+            metronomeStore = MetronomeSettingsStore(context.applicationContext),
         )
     }
 }

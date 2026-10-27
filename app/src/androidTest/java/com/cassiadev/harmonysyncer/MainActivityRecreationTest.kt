@@ -31,6 +31,7 @@ import androidx.test.espresso.intent.matcher.IntentMatchers.hasAction
 import androidx.test.platform.app.InstrumentationRegistry
 import com.cassiadev.harmonysyncer.audio.AudioPreviewController
 import com.cassiadev.harmonysyncer.audio.LoadedAudioFile
+import com.cassiadev.harmonysyncer.audio.MetronomeSettings
 import com.cassiadev.harmonysyncer.audio.PcmClip
 import com.cassiadev.harmonysyncer.audio.RECORDING_INTERRUPTED_NOTICE
 import com.cassiadev.harmonysyncer.audio.RecordedTake
@@ -265,8 +266,10 @@ class MainActivityRecreationTest {
                 playPreview = playPreview,
                 stopPlayback = stopPlayback,
                 closePlayback = closePlayback,
-                recordTake = recordTake,
+                recordTake = { baseName, shouldStop, onProgress, _ -> recordTake(baseName, shouldStop, onProgress) },
                 saveRecording = saveRecording,
+                // These takes are short and have no count-in.
+                loadMetronome = { MetronomeSettings(useForRecording = false) },
             )
         }
     }

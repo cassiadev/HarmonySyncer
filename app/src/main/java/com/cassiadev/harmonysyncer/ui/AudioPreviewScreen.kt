@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import com.cassiadev.harmonysyncer.R
 import com.cassiadev.harmonysyncer.audio.AUDIO_MAX_DURATION_SECONDS
 import com.cassiadev.harmonysyncer.audio.ClipInfo
+import com.cassiadev.harmonysyncer.audio.MetronomeSettings
 import com.cassiadev.harmonysyncer.audio.MixSettings
 import com.cassiadev.harmonysyncer.audio.PreviewPhase
 import com.cassiadev.harmonysyncer.audio.PreviewUiState
@@ -93,6 +94,8 @@ object AudioPreviewTags {
     const val RECORD_B = "recordB"
     const val STOP_RECORDING = "stopRecording"
     const val RECORDING_TIME = "recordingTime"
+    const val METRONOME = "metronome"
+    const val METRONOME_BEATS = "metronomeBeats"
 }
 
 // Dataset record with the CC BY 4.0 license for the bundled Locus iste excerpt.
@@ -115,6 +118,9 @@ fun AudioPreviewScreen(
     canRecord: Boolean = false,
     onRecord: (TrackSlot) -> Unit = {},
     onStopRecording: () -> Unit = {},
+    onMetronomeChange: (MetronomeSettings) -> Unit = {},
+    onStartMetronome: () -> Unit = {},
+    onStopMetronome: () -> Unit = {},
 ) {
     val bothSelected = state.trackA != null && state.trackB != null
     var timingOpen by rememberSaveable { mutableStateOf(false) }
@@ -123,6 +129,12 @@ fun AudioPreviewScreen(
         if (!bothSelected || !state.canEdit) timingOpen = false
     }
     val phase = state.phase
+    // The metronome sheet stays open while its own metronome runs and closes for anything else.
+    val metronomeSheetAllowed = state.canEdit || phase is PreviewPhase.Metronome
+    var metronomeOpen by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(metronomeSheetAllowed) {
+        if (!metronomeSheetAllowed) metronomeOpen = false
+    }
 
     Column(
         modifier = modifier
@@ -171,9 +183,13 @@ fun AudioPreviewScreen(
                     loadingText = stringResource(
                         if (phase is PreviewPhase.SavingRecording) R.string.track_saving else R.string.track_loading,
                     ),
+                    recordingMetronome = (phase as? PreviewPhase.Recording)?.takeIf { it.slot == slot }?.metronome,
+                    countInStartNanos = (phase as? PreviewPhase.Recording)?.takeIf { it.slot == slot }?.countInStartNanos,
                 )
             }
         }
+        // Shown with or without files: recording, and so its metronome, is possible from the start layout.
+        MetronomeRow(settings = state.metronome, enabled = state.canEdit, onClick = { metronomeOpen = true })
         if (state.trackA?.isSample == true || state.trackB?.isSample == true) SampleCredit()
         // A failed load keeps the previous file of that slot and the other slot's file.
         if (state.failedSlot != null && (state.trackA != null || state.trackB != null)) {
@@ -246,7 +262,8 @@ fun AudioPreviewScreen(
                     formatRecordingElapsed(phase.elapsedMs),
                 )
                 is PreviewPhase.SavingRecording -> stringResource(R.string.status_saving_recording)
-                PreviewPhase.Idle -> if (bothSelected) {
+                // The metronome sheet covers the screen while it runs; the line reads as when idle.
+                PreviewPhase.Idle, is PreviewPhase.Metronome -> if (bothSelected) {
                     stringResource(R.string.status_ready)
                 } else {
                     stringResource(R.string.selected_count, selectedCount)
@@ -293,6 +310,19 @@ fun AudioPreviewScreen(
     // Editing locks while loading or playing, so the sheet closes with it and returns afterwards.
     if (timingOpen && bothSelected && state.canEdit) {
         TimingSheet(settings = state.settings, onSettingsChange = onSettingsChange, onDismiss = { timingOpen = false })
+    }
+    if (metronomeOpen && metronomeSheetAllowed) {
+        MetronomeSheet(
+            settings = state.metronome,
+            phase = phase,
+            onChange = onMetronomeChange,
+            onStart = onStartMetronome,
+            onStop = onStopMetronome,
+            onDismiss = {
+                onStopMetronome()
+                metronomeOpen = false
+            },
+        )
     }
 }
 

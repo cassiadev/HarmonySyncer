@@ -621,6 +621,49 @@ class AudioPreviewControllerTest {
         assertFalse(File(folder.root, "empty@48000.pcm").exists())
     }
 
+    /** Records [samples] frames into A with a 120 BPM, 4-beat count-in: 96 000 frames at 48 kHz. */
+    private suspend fun TestScope.recordCountInTake(samples: Int, reason: TakeStopReason, draftName: String): FakeAudioHarness {
+        val harness = FakeAudioHarness(this, metronome = MetronomeSettings(useForRecording = true, clickOn = false))
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        val draft = buildDraft(draftName, intact = true)
+        harness.anchoredRecordBlock = { _, _, _, _ -> RecordedTake(PcmClip(ShortArray(samples), 48_000), reason, draft) }
+        harness.controller.startRecording(TrackSlot.A)
+        advanceUntilIdle()
+        return harness
+    }
+
+    @Test
+    fun `stop during count-in discards the take`() = runTest {
+        val harness = recordCountInTake(95_999, TakeStopReason.Requested, "short")
+
+        assertTrue(harness.savedRecordings.isEmpty())
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        assertFalse(File(folder.root, "short@48000.pcm").exists())
+        assertEquals(null, harness.controller.state.notice)
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `interruption during count-in also discards`() = runTest {
+        val harness = recordCountInTake(95_999, TakeStopReason.Interrupted, "cut")
+
+        assertTrue(harness.savedRecordings.isEmpty())
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        assertFalse(File(folder.root, "cut@48000.pcm").exists())
+        assertEquals(null, harness.controller.state.notice)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `take as long as the count-in is saved`() = runTest {
+        val harness = recordCountInTake(96_000, TakeStopReason.Requested, "long")
+
+        assertEquals(1, harness.savedRecordings.size)
+        assertEquals("long.wav", harness.controller.state.trackA?.name)
+        harness.controller.close()
+    }
+
     @Test
     fun `recorder failure reports the message`() = runTest {
         val harness = FakeAudioHarness(this)
@@ -773,7 +816,210 @@ class AudioPreviewControllerTest {
      * Builds a controller whose file loading, sample loading, rendering and playback are fakes running on
      * the test scheduler, and records what the controller asks them to render, play, stop and close.
      */
-    private class FakeAudioHarness(private val testScope: TestScope) {
+    @Test
+    fun `metronome settings load at start and save on change`() = runTest {
+        val harness = FakeAudioHarness(this, metronome = MetronomeSettings(bpm = 90))
+        assertEquals(90, harness.controller.state.metronome.bpm)
+
+        harness.controller.updateMetronome(MetronomeSettings(bpm = 100))
+
+        assertEquals(100, harness.controller.state.metronome.bpm)
+        assertEquals(listOf(MetronomeSettings(bpm = 100)), harness.savedMetronome)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `metronome take freezes settings and reports the count-in start`() = runTest {
+        val settings = MetronomeSettings(useForRecording = true, clickOn = false)
+        val harness = FakeAudioHarness(this, metronome = settings)
+        harness.now = 5_000_000_000
+        harness.anchoredRecordBlock = { _, shouldStop, _, anchor ->
+            checkNotNull(anchor).stamp.complete(CaptureStamp(48_000, FrameTime(0, 4_900_000_000), measured = true))
+            while (!shouldStop()) delay(10)
+            RecordedTake(PcmClip(ShortArray(200_000), 48_000), TakeStopReason.Requested, null)
+        }
+
+        harness.controller.startRecording(TrackSlot.A)
+        assertEquals(PreviewPhase.Recording(TrackSlot.A, 0, settings, null), harness.controller.state.phase)
+        runCurrent()
+        assertEquals(5_150_000_000L, (harness.controller.state.phase as PreviewPhase.Recording).countInStartNanos)
+        harness.controller.updateMetronome(settings.copy(bpm = 90))
+
+        assertEquals(settings, harness.controller.state.metronome)
+        assertEquals(settings, (harness.controller.state.phase as PreviewPhase.Recording).metronome)
+        harness.controller.stopRecording()
+        advanceUntilIdle()
+        assertEquals(1, harness.savedRecordings.size)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `take without metronome passes no anchor`() = runTest {
+        val harness = FakeAudioHarness(this)
+
+        harness.controller.startRecording(TrackSlot.A)
+        runCurrent()
+        harness.controller.stopRecording()
+        advanceUntilIdle()
+
+        assertEquals(listOf<TakeAnchor?>(null), harness.receivedAnchors)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `stop while preparing saves nothing`() = runTest {
+        val harness = FakeAudioHarness(this, metronome = MetronomeSettings(useForRecording = true, clickOn = false))
+        harness.controller.selectFile(TrackSlot.A) { buildAudio("a.wav") }
+        runCurrent()
+        // No capture stamp yet, so the recorder kept nothing.
+        harness.anchoredRecordBlock = { _, shouldStop, _, _ ->
+            while (!shouldStop()) delay(10)
+            RecordedTake(PcmClip(ShortArray(0), 48_000), TakeStopReason.Requested, null)
+        }
+
+        harness.controller.startRecording(TrackSlot.A)
+        runCurrent()
+        harness.controller.stopRecording()
+        advanceUntilIdle()
+
+        assertEquals(0, harness.savedRecordings.size)
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `standalone metronome with clicks restarts on change and stops with stop()`() = runTest {
+        val harness = FakeAudioHarness(this)
+
+        harness.controller.startMetronome()
+        assertEquals(PreviewPhase.Metronome(null), harness.controller.state.phase)
+        runCurrent()
+        harness.clickStarts.single()(700)
+        runCurrent()
+        assertEquals(PreviewPhase.Metronome(700), harness.controller.state.phase)
+        harness.controller.updateMetronome(MetronomeSettings(bpm = 90))
+
+        assertEquals(listOf(MetronomeSettings(bpm = 90)), harness.restartCalls)
+        assertEquals(PreviewPhase.Metronome(null), harness.controller.state.phase)
+        assertEquals(1, harness.savedMetronome.size)
+        assertFalse(harness.clickRecording.single())
+        harness.controller.stop()
+        assertTrue(harness.clickStops.single()())
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+        advanceUntilIdle()
+        harness.controller.close()
+    }
+
+    @Test
+    fun `standalone metronome without clicks uses the lead`() = runTest {
+        val settings = MetronomeSettings(clickOn = false)
+        val harness = FakeAudioHarness(this, metronome = settings)
+        harness.now = 1_000_000_000
+
+        harness.controller.startMetronome()
+        assertEquals(PreviewPhase.Metronome(1_150_000_000), harness.controller.state.phase)
+        harness.now = 3_000_000_000
+        harness.controller.updateMetronome(settings)
+
+        assertEquals(PreviewPhase.Metronome(3_150_000_000), harness.controller.state.phase)
+        runCurrent()
+        assertTrue(harness.clickStops.isEmpty())
+        harness.controller.close()
+    }
+
+    @Test
+    fun `turning clicks on while running starts a click track`() = runTest {
+        val harness = FakeAudioHarness(this, metronome = MetronomeSettings(clickOn = false))
+        harness.controller.startMetronome()
+
+        harness.controller.updateMetronome(MetronomeSettings(clickOn = true))
+        runCurrent()
+
+        assertEquals(1, harness.clickStops.size)
+        assertEquals(PreviewPhase.Metronome(null), harness.controller.state.phase)
+        harness.controller.stop()
+        advanceUntilIdle()
+        harness.controller.close()
+    }
+
+    @Test
+    fun `turning clicks off while running stops the click track`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.now = 1_000_000_000
+        harness.controller.startMetronome()
+        runCurrent()
+        harness.clickStarts.single()(700)
+        runCurrent()
+
+        harness.controller.updateMetronome(MetronomeSettings(clickOn = false))
+        assertTrue(harness.clickStops.single()())
+        assertEquals(PreviewPhase.Metronome(1_150_000_000), harness.controller.state.phase)
+        // The ended session may still report a count-in; it must not move the beats.
+        harness.clickStarts.single()(900)
+        runCurrent()
+
+        assertEquals(PreviewPhase.Metronome(1_150_000_000), harness.controller.state.phase)
+        advanceUntilIdle()
+        harness.controller.close()
+    }
+
+    @Test
+    fun `standalone metronome keeps showing beats after its click track fails`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.clickFailure = IllegalStateException("이 기기에서 클릭음을 재생할 수 없습니다.")
+        harness.now = 1_000_000_000
+        harness.controller.startMetronome()
+        runCurrent()
+        assertEquals(PreviewPhase.Metronome(1_150_000_000), harness.controller.state.phase)
+
+        harness.now = 2_000_000_000
+        harness.controller.updateMetronome(MetronomeSettings(bpm = 90))
+
+        assertEquals(PreviewPhase.Metronome(2_150_000_000), harness.controller.state.phase)
+        assertTrue(harness.restartCalls.isEmpty())
+        harness.controller.stop()
+        harness.controller.close()
+    }
+
+    @Test
+    fun `close stops a running metronome`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.controller.startMetronome()
+        runCurrent()
+
+        harness.controller.close()
+
+        assertTrue(harness.clickStops.single()())
+    }
+
+    @Test
+    fun `metronome blocks other controls`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        harness.controller.startMetronome()
+
+        harness.controller.selectFile(TrackSlot.A) { error("Must not load while the metronome runs") }
+        harness.controller.startRecording(TrackSlot.A)
+        harness.controller.play()
+        harness.controller.updateSettings(MixSettings(volumeA = 0f))
+        runCurrent()
+
+        assertEquals(PreviewPhase.Metronome(null), harness.controller.state.phase)
+        assertTrue(harness.renderRequests.isEmpty())
+        assertTrue(harness.receivedAnchors.isEmpty())
+        assertEquals(MixSettings(), harness.controller.state.settings)
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        harness.controller.stop()
+        advanceUntilIdle()
+        harness.controller.close()
+    }
+
+    // Without a metronome unless a test asks for one: most recording tests predate it.
+    private class FakeAudioHarness(
+        private val testScope: TestScope,
+        metronome: MetronomeSettings = MetronomeSettings(useForRecording = false),
+    ) {
         private val dispatcher = StandardTestDispatcher(testScope.testScheduler)
         val ownedJob = SupervisorJob()
         val renderRequests = mutableListOf<RenderRequest>()
@@ -792,6 +1038,17 @@ class AudioPreviewControllerTest {
         var saveBlock: suspend (String, ByteArray) -> Unit = { name, wav -> savedRecordings += name to wav }
         var recoverBlock: suspend () -> Int = { 0 }
         var recoverCalls = 0
+        val receivedAnchors = mutableListOf<TakeAnchor?>()
+        var anchoredRecordBlock: suspend (String, () -> Boolean, (Long) -> Unit, TakeAnchor?) -> RecordedTake =
+            { baseName, shouldStop, onProgress, _ -> recordBlock(baseName, shouldStop, onProgress) }
+        val savedMetronome = mutableListOf<MetronomeSettings>()
+        var now = 0L
+        val clickStops = mutableListOf<() -> Boolean>()
+        val clickStarts = mutableListOf<(Long) -> Unit>()
+        val clickRecording = mutableListOf<Boolean>()
+        val restartCalls = mutableListOf<MetronomeSettings>()
+        /** Thrown by the fake click track as soon as it starts, like a device that cannot play it. */
+        var clickFailure: Exception? = null
         val controller = AudioPreviewController(
             scope = CoroutineScope(ownedJob + dispatcher),
             ioDispatcher = dispatcher,
@@ -812,13 +1069,28 @@ class AudioPreviewControllerTest {
                 normalizeCalls++
                 normalizeBlock(a, b)
             },
-            recordTake = { baseName, shouldStop, onProgress -> recordBlock(baseName, shouldStop, onProgress) },
+            recordTake = { baseName, shouldStop, onProgress, anchor ->
+                receivedAnchors += anchor
+                anchoredRecordBlock(baseName, shouldStop, onProgress, anchor)
+            },
             saveRecording = { name, wav -> saveBlock(name, wav) },
             recoverRecordings = {
                 recoverCalls++
                 recoverBlock()
             },
             currentTime = { LocalDateTime.of(2026, 10, 26, 15, 30, 12) },
+            loadMetronome = { metronome },
+            saveMetronome = { savedMetronome += it },
+            // Plays until told to stop, like the real blocking click track.
+            playClicks = { _, recording, _, shouldStop, onCountInStart ->
+                clickFailure?.let { throw it }
+                clickRecording += recording
+                clickStops += shouldStop
+                clickStarts += onCountInStart
+                while (!shouldStop()) delay(10)
+            },
+            restartClicks = { restartCalls += it },
+            nanoTime = { now },
         )
 
         /** Polls like the real recorder until a stop is requested, then returns a three-sample take. */

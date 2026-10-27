@@ -48,12 +48,14 @@ class TakeLoopTest {
     private fun readWith(
         microphone: FakeMicrophone,
         shouldStop: () -> Boolean = { false },
-        isSilenced: () -> Boolean = { false },
+        isInterrupted: () -> Boolean = { false },
         draft: RecordingDraft? = null,
         sampleRate: Int = 8_000,
         maxFrames: Int = 1_000,
         chunkFrames: Int = 10,
         onProgress: (Long) -> Unit = {},
+        firstFrame: () -> Long? = { 0L },
+        onRead: (Long) -> Unit = {},
     ) = readTake(
         sampleRate,
         maxFrames,
@@ -61,10 +63,77 @@ class TakeLoopTest {
         microphone::read,
         microphone::readAvailable,
         shouldStop,
-        isSilenced,
+        isInterrupted,
         draft,
         onProgress,
+        firstFrame = firstFrame,
+        onRead = onRead,
     )
+
+    private fun frames(range: LongRange) = ShortArray(range.count()) { (range.first + it).toShort() }
+
+    @Test
+    fun `drops frames before the first frame in buffer and draft`() {
+        val draft = checkNotNull(RecordingDrafts(folder.root).create("take", 8_000))
+
+        val take = readWith(FakeMicrophone(), shouldStop = stopOnCall(7), draft = draft, firstFrame = { 25L })
+
+        assertArrayEquals(frames(25L..59L), take.clip.samples)
+        assertArrayEquals(take.clip.samples, checkNotNull(draft.loadClip()).samples)
+    }
+
+    @Test
+    fun `drops everything until the first frame is decided`() {
+        var reads = 0
+        val take = readWith(
+            FakeMicrophone(),
+            shouldStop = stopOnCall(7),
+            onRead = { reads++ },
+            firstFrame = { if (reads <= 3) null else 40L },
+        )
+
+        assertArrayEquals(frames(40L..59L), take.clip.samples)
+    }
+
+    @Test
+    fun `stop before the first frame keeps nothing`() {
+        val take = readWith(FakeMicrophone(), shouldStop = stopOnCall(4), firstFrame = { null })
+
+        assertEquals(0, take.clip.samples.size)
+        assertEquals(TakeStopReason.Requested, take.stopReason)
+    }
+
+    @Test
+    fun `elapsed time and limit count kept frames`() {
+        val progress = mutableListOf<Long>()
+
+        val take = readWith(FakeMicrophone(), maxFrames = 50, firstFrame = { 100L }, onProgress = { progress += it })
+
+        assertArrayEquals(frames(100L..149L), take.clip.samples)
+        assertEquals(TakeStopReason.TimeLimit, take.stopReason)
+        assertEquals(50L * 1_000 / 8_000, progress.last())
+    }
+
+    @Test
+    fun `reports input frames after each read`() {
+        val inputs = mutableListOf<Long>()
+
+        readWith(FakeMicrophone(), shouldStop = stopOnCall(4), onRead = { inputs += it })
+
+        assertEquals(listOf(10L, 20L, 30L), inputs)
+    }
+
+    @Test
+    fun `interruption before the first frame returns an empty take`() {
+        val microphone = FakeMicrophone()
+        val silencedTake = readWith(microphone, isInterrupted = { microphone.counts.size >= 3 }, firstFrame = { null })
+        assertEquals(0, silencedTake.clip.samples.size)
+        assertEquals(TakeStopReason.Interrupted, silencedTake.stopReason)
+
+        val failing = readWith(FakeMicrophone(failAt = 3), firstFrame = { null })
+        assertEquals(0, failing.clip.samples.size)
+        assertEquals(TakeStopReason.Interrupted, failing.stopReason)
+    }
 
     @Test
     fun `stops when asked and keeps every frame in the draft`() {
@@ -109,7 +178,7 @@ class TakeLoopTest {
 
     @Test
     fun `silencing interrupts and keeps frames`() {
-        val take = readWith(FakeMicrophone(), isSilenced = stopOnCall(2))
+        val take = readWith(FakeMicrophone(), isInterrupted = stopOnCall(2))
 
         assertEquals(TakeStopReason.Interrupted, take.stopReason)
         assertEquals(10, take.clip.samples.size)
@@ -134,14 +203,14 @@ class TakeLoopTest {
 
     @Test
     fun `silencing stays reported after it is lifted`() {
-        val latch = SilencingLatch()
-        assertFalse(latch.wasSilenced)
+        val latch = TakeInterruptionLatch()
+        assertFalse(latch.wasInterrupted)
 
         // Both callbacks can arrive while the reading thread is busy with a slow draft write.
-        latch.report(silenced = true)
-        latch.report(silenced = false)
+        latch.report(interrupted = true)
+        latch.report(interrupted = false)
 
-        assertTrue(latch.wasSilenced)
+        assertTrue(latch.wasInterrupted)
     }
 
     @Test
@@ -150,7 +219,7 @@ class TakeLoopTest {
         val draft = checkNotNull(drafts.create("take", 8_000))
 
         val failure = assertThrows(IllegalStateException::class.java) {
-            readWith(FakeMicrophone(), isSilenced = { true }, draft = draft)
+            readWith(FakeMicrophone(), isInterrupted = { true }, draft = draft)
         }
 
         assertEquals(MICROPHONE_UNAVAILABLE_MESSAGE, failure.message)
@@ -164,7 +233,7 @@ class TakeLoopTest {
 
         // The stop arrived while the microphone was starting; its buffer holds only silenced samples.
         val failure = assertThrows(IllegalStateException::class.java) {
-            readWith(FakeMicrophone(available = 4), shouldStop = { true }, isSilenced = { true }, draft = draft)
+            readWith(FakeMicrophone(available = 4), shouldStop = { true }, isInterrupted = { true }, draft = draft)
         }
 
         assertEquals(MICROPHONE_UNAVAILABLE_MESSAGE, failure.message)

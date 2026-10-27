@@ -3,12 +3,15 @@ package com.cassiadev.harmonysyncer.audio
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.AudioRecordingConfiguration
+import android.media.AudioTimestamp
 import android.media.MediaRecorder
 import androidx.annotation.RequiresPermission
+import androidx.annotation.VisibleForTesting
 import androidx.core.content.ContextCompat
 
 // 44.1 kHz is the only capture rate Android guarantees on every device.
@@ -21,34 +24,60 @@ private val RECORDING_SAMPLE_RATES = intArrayOf(48_000, 44_100)
 internal fun chooseCaptureBufferBytes(sampleRate: Int, minBufferBytes: Int): Int =
     maxOf(minBufferBytes, sampleRate * Short.SIZE_BYTES)
 
+/**
+ * Whether a recording configuration ends the take: it was silenced, or it moved off [requiredInputType], the
+ * microphone the recorder asked for. A device not yet known keeps the take going.
+ */
+internal fun shouldInterruptTake(silenced: Boolean, inputType: Int?, requiredInputType: Int?): Boolean =
+    silenced || (requiredInputType != null && inputType != null && inputType != requiredInputType)
+
 /** Records one mono PCM16 take from the microphone through [readTake]. */
 class TakeRecorder(private val context: Context) {
-    /** Blocking; call on an IO thread. Throws [IllegalStateException] with a user message if it cannot record. */
+    // Read by device tests only, like ClickTrackPlayer's routing fields.
+    @VisibleForTesting
+    @Volatile internal var lastRoutedInputType: Int? = null
+        private set
+
+    /**
+     * Blocking; call on an IO thread. Throws [IllegalStateException] with a user message if it cannot record.
+     * With an [anchor], completes its stamp from the capture timestamp and keeps only frames from its first frame.
+     */
     fun record(
         openDraft: (sampleRate: Int) -> RecordingDraft?,
         shouldStop: () -> Boolean,
         onProgress: (elapsedMs: Long) -> Unit,
+        anchor: TakeAnchor? = null,
     ): RecordedTake {
         // The screen asks first; this guards any other caller.
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             throw IllegalStateException(MICROPHONE_DENIED_MESSAGE)
         }
         val record = createAudioRecord() ?: throw IllegalStateException(MICROPHONE_UNAVAILABLE_MESSAGE)
-        // A new latch per take, so silencing in one take never stops the next.
-        val silenced = SilencingLatch()
+        // A new latch per take, so an interruption in one take never stops the next.
+        val interruptedTake = TakeInterruptionLatch()
+        // A headset microphone sits next to its earbuds and records the metronome clicks; the phone's own does not.
+        // The preference is only a request, so a take that is moved to another input stops like a silenced one.
+        val builtInMic = context.getSystemService(AudioManager::class.java).getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_MIC }
+        fun report(config: AudioRecordingConfiguration) =
+            interruptedTake.report(shouldInterruptTake(config.isClientSilenced, config.audioDevice?.type, builtInMic?.type))
         val callback = object : AudioManager.AudioRecordingCallback() {
             override fun onRecordingConfigChanged(configs: List<AudioRecordingConfiguration>) {
-                configs.firstOrNull { it.clientAudioSessionId == record.audioSessionId }
-                    ?.let { silenced.report(it.isClientSilenced) }
+                configs.firstOrNull { it.clientAudioSessionId == record.audioSessionId }?.let(::report)
             }
         }
         try {
             // Registered before starting, so silencing that applies from the first frame is not missed.
             record.registerAudioRecordingCallback(context.mainExecutor, callback)
+            builtInMic?.let { record.setPreferredDevice(it) }
+            lastRoutedInputType = null
             record.startRecording()
             check(record.recordingState == AudioRecord.RECORDSTATE_RECORDING) { MICROPHONE_UNAVAILABLE_MESSAGE }
-            record.activeRecordingConfiguration?.let { silenced.report(it.isClientSilenced) }
+            record.activeRecordingConfiguration?.let(::report)
             val rate = record.sampleRate
+            val timestamp = AudioTimestamp()
+            var wait: TimestampWait? = null
+            var firstRead: FrameTime? = null
             return readTake(
                 sampleRate = rate,
                 maxFrames = AUDIO_MAX_DURATION_SECONDS * rate,
@@ -58,9 +87,26 @@ class TakeRecorder(private val context: Context) {
                     record.read(buffer, offset, count, AudioRecord.READ_NON_BLOCKING)
                 },
                 shouldStop = shouldStop,
-                isSilenced = { silenced.wasSilenced },
+                isInterrupted = { interruptedTake.wasInterrupted },
                 draft = openDraft(rate),
                 onProgress = onProgress,
+                firstFrame = if (anchor == null) ({ 0L }) else ({ anchor.firstFrame }),
+                onRead = onRead@{ inputFrames ->
+                    if (lastRoutedInputType == null) lastRoutedInputType = record.routedDevice?.type
+                    if (anchor == null || anchor.stamp.isCompleted) return@onRead
+                    val now = System.nanoTime()
+                    // Fallback: the newest frame read was captured about when the first read returned.
+                    val fallback = firstRead ?: FrameTime(inputFrames, now).also { firstRead = it }
+                    val reading = wait ?: TimestampWait(now).also { wait = it }
+                    val read = if (record.getTimestamp(timestamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) {
+                        FrameTime(timestamp.framePosition, timestamp.nanoTime)
+                    } else {
+                        null
+                    }
+                    reading.offer(read, now, fallback)?.let { (stamp, measured) ->
+                        anchor.stamp.complete(CaptureStamp(rate, stamp, measured))
+                    }
+                },
             )
         } finally {
             // Either step can throw when the audio service is gone; the microphone must still be released.
