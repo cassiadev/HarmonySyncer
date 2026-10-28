@@ -37,6 +37,8 @@ Pitch changes and playback drift correction are outside the current scope.
    is never trimmed. Timing offsets can make a mix up to 60.3 seconds long, and only a mix of
    60 seconds or less can be chosen again as a track. Saving continues while the app is in
    the background.
+   WAV is uncompressed: one minute at 48 kHz takes about 5.8 MB, several times the size of a
+   typical M4A.
 
 To hear the app without your own files, tap **Try the sample** (샘플로 들어보기) on the start
 screen. It loads an eight-second soprano (A) and alto (B) excerpt of Bruckner's *Locus iste*
