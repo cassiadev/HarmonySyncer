@@ -1104,6 +1104,24 @@ class AudioPreviewControllerTest {
     }
 
     @Test
+    fun `a muted sample adds no credit notice`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.sampleBlock = { buildAudio("soprano") to buildAudio("alto") }
+        harness.controller.loadSample()
+        runCurrent()
+        harness.controller.selectFile(TrackSlot.B) { buildAudio("mine.wav") }
+        runCurrent()
+        // A is the sample at 0%, so none of it reaches the mix.
+        harness.controller.updateSettings(MixSettings(volumeA = 0f))
+
+        harness.controller.exportMix()
+        runCurrent()
+
+        assertEquals(MIX_EXPORTED_NOTICE, harness.controller.state.notice)
+        harness.controller.close()
+    }
+
+    @Test
     fun `failed save explains it, unlocks and permits another attempt`() = runTest {
         val harness = FakeAudioHarness(this)
         harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))

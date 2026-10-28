@@ -536,7 +536,9 @@ class AudioPreviewController internal constructor(
         val settings = state.settings
         val cached = normalizedClips
         val name = "${buildMixBaseName(currentTime())}.wav"
-        val hasSample = state.trackA?.isSample == true || state.trackB?.isSample == true
+        // A sample slot at 0% adds nothing to the mix, so it needs no credit.
+        val hasSample = (state.trackA?.isSample == true && settings.volumeA > 0f) ||
+            (state.trackB?.isSample == true && settings.volumeB > 0f)
         state = state.copy(phase = PreviewPhase.Exporting, error = null, failedSlot = null, notice = null)
         scope.launch {
             try {
