@@ -133,6 +133,8 @@ private fun mixWithOffset(
         trackB = b,
         startB = startB,
         length = maxOf(startA + lengthA, startB + lengthB),
+        // Each voice is halved (100% volume = linear gain 0.5) so the sum of two stays within PCM16 without
+        // clipping; previews and saved mixes both use this gain, so a mix can sound quieter than its sources.
         gainA = settings.volumeA * 0.5f,
         gainB = settings.volumeB * 0.5f,
         checkActive = checkActive,
