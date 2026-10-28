@@ -1044,6 +1044,11 @@ class AudioPreviewControllerTest {
         assertEquals("a.wav", state.trackA?.name)
         assertEquals("b.wav", state.trackB?.name)
         assertEquals(settings, state.settings)
+
+        // The same pair and settings sent to the player.
+        harness.controller.play()
+        advanceUntilIdle()
+        assertArrayEquals(harness.playedClips.single().samples, saved.samples)
         harness.controller.close()
     }
 

@@ -494,19 +494,10 @@ class AudioPreviewController internal constructor(
         state = state.copy(phase = PreviewPhase.Rendering, error = null, failedSlot = null, notice = null)
         playbackJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                val (normalized, preview) = withContext(renderDispatcher) {
-                    try {
-                        val clips = cached ?: normalize(a, b)
-                        clips to render(clips.first, clips.second, settings)
-                    } catch (outOfMemory: OutOfMemoryError) {
-                        // Only rate conversion and mixing are caught: their partial buffers are unreachable now,
-                        // so editing can resume.
-                        throw IllegalStateException(
-                            "메모리가 부족해 두 음성을 합치지 못했습니다. 더 짧은 파일로 다시 시도해 주세요.",
-                            outOfMemory,
-                        )
-                    }
-                }
+                val (normalized, preview) = renderMix(
+                    a, b, settings, cached,
+                    outOfMemoryMessage = "메모리가 부족해 두 음성을 합치지 못했습니다. 더 짧은 파일로 다시 시도해 주세요.",
+                ) { it }
                 ensureActive()
                 // A stopped session or replaced file must not leave clips from another pair behind.
                 if (session == playbackSession && clipA === a && clipB === b) normalizedClips = normalized
@@ -549,15 +540,7 @@ class AudioPreviewController internal constructor(
         state = state.copy(phase = PreviewPhase.Exporting, error = null, failedSlot = null, notice = null)
         scope.launch {
             try {
-                val (normalized, wav) = withContext(renderDispatcher) {
-                    try {
-                        val clips = cached ?: normalize(a, b)
-                        clips to encodeWav(render(clips.first, clips.second, settings))
-                    } catch (outOfMemory: OutOfMemoryError) {
-                        // As in play: the partial buffers are unreachable now, so editing can resume.
-                        throw IllegalStateException(MIX_EXPORT_OUT_OF_MEMORY_MESSAGE, outOfMemory)
-                    }
-                }
+                val (normalized, wav) = renderMix(a, b, settings, cached, MIX_EXPORT_OUT_OF_MEMORY_MESSAGE, encodeWav)
                 ensureActive()
                 if (clipA === a && clipB === b) normalizedClips = normalized
                 withContext(ioDispatcher + NonCancellable) { saveRecording(name, wav) }
@@ -578,6 +561,27 @@ class AudioPreviewController internal constructor(
             } finally {
                 if (!closed) state = state.copy(phase = PreviewPhase.Idle)
             }
+        }
+    }
+
+    /**
+     * Rate-matches [a] and [b] (unless [cached]) and mixes them on the render dispatcher, then applies [finish].
+     * [play] and [exportMix] share it, so a saved mix holds the samples a preview plays.
+     */
+    private suspend fun <R> renderMix(
+        a: PcmClip,
+        b: PcmClip,
+        settings: MixSettings,
+        cached: Pair<PcmClip, PcmClip>?,
+        outOfMemoryMessage: String,
+        finish: (PcmClip) -> R,
+    ): Pair<Pair<PcmClip, PcmClip>, R> = withContext(renderDispatcher) {
+        try {
+            val clips = cached ?: normalize(a, b)
+            clips to finish(render(clips.first, clips.second, settings))
+        } catch (outOfMemory: OutOfMemoryError) {
+            // Only this work is caught: its partial buffers are unreachable now, so editing can resume.
+            throw IllegalStateException(outOfMemoryMessage, outOfMemory)
         }
     }
 
