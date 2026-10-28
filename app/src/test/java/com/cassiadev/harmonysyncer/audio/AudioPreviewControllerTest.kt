@@ -1,6 +1,10 @@
 package com.cassiadev.harmonysyncer.audio
 
+import java.io.ByteArrayInputStream
 import java.io.File
+import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.time.LocalDateTime
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -16,6 +20,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -1015,6 +1020,263 @@ class AudioPreviewControllerTest {
         harness.controller.close()
     }
 
+    @Test
+    fun `exported mix holds the previewed samples at the higher rate`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.useRealMixing()
+        val a = LoadedAudioFile("a.wav", PcmClip(ShortArray(4_410) { (it * 7 % 2_000 - 1_000).toShort() }, 44_100))
+        val b = LoadedAudioFile("b.wav", PcmClip(ShortArray(4_800) { (it * 13 % 3_000 - 1_500).toShort() }, 48_000))
+        harness.selectPair(a, b)
+        val settings = MixSettings(volumeA = 0.8f, volumeB = 0.6f, offsetMs = 12)
+        harness.controller.updateSettings(settings)
+
+        harness.controller.exportMix()
+        advanceUntilIdle()
+
+        val (name, wav) = harness.savedRecordings.single()
+        assertEquals("HarmonySyncer-Mix-20261026-153012.wav", name)
+        val saved = readWavPcm16(ByteArrayInputStream(wav))
+        assertEquals(48_000, saved.sampleRate)
+        assertArrayEquals(preparePreview(a.clip, b.clip, settings).samples, saved.samples)
+        val state = harness.controller.state
+        assertEquals(MIX_EXPORTED_NOTICE, state.notice)
+        assertEquals(PreviewPhase.Idle, state.phase)
+        assertEquals("a.wav", state.trackA?.name)
+        assertEquals("b.wav", state.trackB?.name)
+        assertEquals(settings, state.settings)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `a mix longer than sixty seconds is saved whole`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.useRealMixing()
+        val frames = 60 * 48_000
+        harness.selectPair(
+            LoadedAudioFile("a.wav", PcmClip(ShortArray(frames) { 1_000 }, 48_000)),
+            LoadedAudioFile("b.wav", PcmClip(ShortArray(frames) { 2_000 }, 48_000)),
+        )
+        harness.controller.updateSettings(MixSettings(offsetMs = 300))
+
+        harness.controller.exportMix()
+        advanceUntilIdle()
+
+        // The WAV reader rejects files over sixty seconds, so the header and tail are read directly.
+        val wav = harness.savedRecordings.single().second
+        val bytes = ByteBuffer.wrap(wav).order(ByteOrder.LITTLE_ENDIAN)
+        val dataBytes = (frames + 14_400) * Short.SIZE_BYTES
+        assertEquals(dataBytes, bytes.getInt(40))
+        assertEquals(44 + dataBytes, wav.size)
+        // Only B's delayed tail remains at the end, at half gain.
+        assertEquals(1_000.toShort(), bytes.getShort(wav.size - Short.SIZE_BYTES))
+        harness.controller.close()
+    }
+
+    @Test
+    fun `only mixes with a sample carry the credit notice`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.sampleBlock = { buildAudio("soprano") to buildAudio("alto") }
+        harness.controller.loadSample()
+        runCurrent()
+        harness.controller.exportMix()
+        runCurrent()
+        assertEquals("$MIX_EXPORTED_NOTICE $MIX_SAMPLE_CREDIT_NOTICE", harness.controller.state.notice)
+
+        // A is still the sample.
+        harness.controller.selectFile(TrackSlot.B) { buildAudio("mine.wav") }
+        runCurrent()
+        harness.controller.exportMix()
+        runCurrent()
+        assertEquals("$MIX_EXPORTED_NOTICE $MIX_SAMPLE_CREDIT_NOTICE", harness.controller.state.notice)
+
+        harness.controller.selectFile(TrackSlot.A) { buildAudio("also-mine.wav") }
+        runCurrent()
+        harness.controller.exportMix()
+        runCurrent()
+        assertEquals(MIX_EXPORTED_NOTICE, harness.controller.state.notice)
+        assertEquals(3, harness.savedRecordings.size)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `failed save explains it, unlocks and permits another attempt`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        harness.saveBlock = { _, _ -> throw IOException("녹음 파일을 만들지 못했습니다.") }
+
+        harness.controller.exportMix()
+        runCurrent()
+        assertEquals(MIX_EXPORT_FAILED_MESSAGE, harness.controller.state.error)
+        assertEquals(null, harness.controller.state.notice)
+        assertTrue(harness.controller.state.canEdit)
+
+        harness.saveBlock = { name, wav -> harness.savedRecordings += name to wav }
+        harness.controller.exportMix()
+        runCurrent()
+        assertEquals(1, harness.savedRecordings.size)
+        assertEquals(null, harness.controller.state.error)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `running out of memory while encoding explains it and saves nothing`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        harness.encodeBlock = { throw OutOfMemoryError() }
+
+        harness.controller.exportMix()
+        runCurrent()
+        assertEquals(MIX_EXPORT_OUT_OF_MEMORY_MESSAGE, harness.controller.state.error)
+        assertTrue(harness.controller.state.canEdit)
+
+        harness.encodeBlock = ::encodeWavPcm16
+        harness.renderBlock = { _, _, _ -> throw OutOfMemoryError() }
+        harness.controller.exportMix()
+        assertEquals(null, harness.controller.state.error)
+        runCurrent()
+        assertEquals(MIX_EXPORT_OUT_OF_MEMORY_MESSAGE, harness.controller.state.error)
+        assertTrue(harness.controller.state.canEdit)
+        assertEquals(0, harness.savedRecordings.size)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `export reserves controls immediately and ignores repeated actions`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        val saving = harness.holdSaves()
+
+        harness.controller.exportMix()
+        assertEquals(PreviewPhase.Exporting, harness.controller.state.phase)
+        assertFalse(harness.controller.state.canEdit)
+        harness.controller.exportMix()
+        harness.controller.play()
+        harness.controller.startRecording(TrackSlot.A)
+        harness.controller.selectFile(TrackSlot.B) { buildAudio("other.wav") }
+        runCurrent()
+
+        assertEquals(PreviewPhase.Exporting, harness.controller.state.phase)
+        assertEquals(1, harness.renderRequests.size)
+        assertEquals(0, harness.playedClips.size)
+        assertEquals("b.wav", harness.controller.state.trackB?.name)
+        saving.complete(Unit)
+        runCurrent()
+        assertEquals(1, harness.savedRecordings.size)
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `stop during export keeps saving`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        val saving = harness.holdSaves()
+        harness.controller.exportMix()
+        runCurrent()
+
+        // Going to the background or rotating calls stop().
+        harness.controller.stop()
+        runCurrent()
+        assertEquals(PreviewPhase.Exporting, harness.controller.state.phase)
+
+        saving.complete(Unit)
+        runCurrent()
+        assertEquals(1, harness.savedRecordings.size)
+        assertEquals(MIX_EXPORTED_NOTICE, harness.controller.state.notice)
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `close while mixing cancels the export without an error`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        harness.renderBlock = { _, _, _ -> awaitCancellation() }
+        harness.controller.exportMix()
+        runCurrent()
+
+        harness.controller.close()
+        advanceUntilIdle()
+
+        assertEquals(0, harness.savedRecordings.size)
+        assertEquals(null, harness.controller.state.error)
+    }
+
+    @Test
+    fun `close after the write starts finishes the save and leaves the closed state alone`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        val saving = harness.holdSaves()
+        harness.controller.exportMix()
+        runCurrent()
+
+        harness.controller.close()
+        saving.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, harness.savedRecordings.size)
+        assertEquals(null, harness.controller.state.notice)
+        assertEquals(null, harness.controller.state.error)
+        assertEquals(PreviewPhase.Idle, harness.controller.state.phase)
+    }
+
+    @Test
+    fun `export keeps its normalized clips for the next preview`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        harness.controller.exportMix()
+        runCurrent()
+
+        harness.controller.play()
+        runCurrent()
+
+        assertEquals(1, harness.normalizeCalls)
+        assertEquals(2, harness.renderRequests.size)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `a recovery notice during export stays with the saved notice`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        val saving = harness.holdSaves()
+        harness.controller.exportMix()
+        runCurrent()
+
+        harness.recoverBlock = { 1 }
+        harness.controller.recoverDrafts()
+        runCurrent()
+        saving.complete(Unit)
+        runCurrent()
+
+        assertEquals("${buildRecoveredNotice(1)} $MIX_EXPORTED_NOTICE", harness.controller.state.notice)
+        harness.controller.close()
+    }
+
+    @Test
+    fun `a recovery that ends after the export keeps the saved notice`() = runTest {
+        val harness = FakeAudioHarness(this)
+        harness.sampleBlock = { buildAudio("soprano") to buildAudio("alto") }
+        harness.controller.loadSample()
+        runCurrent()
+        val recovering = CompletableDeferred<Int>()
+        harness.recoverBlock = { recovering.await() }
+        harness.controller.recoverDrafts()
+        runCurrent()
+
+        harness.controller.exportMix()
+        runCurrent()
+        assertEquals("$MIX_EXPORTED_NOTICE $MIX_SAMPLE_CREDIT_NOTICE", harness.controller.state.notice)
+        recovering.complete(1)
+        runCurrent()
+
+        assertEquals(
+            "$MIX_EXPORTED_NOTICE $MIX_SAMPLE_CREDIT_NOTICE ${buildRecoveredNotice(1)}",
+            harness.controller.state.notice,
+        )
+        harness.controller.close()
+    }
+
     // Without a metronome unless a test asks for one: most recording tests predate it.
     private class FakeAudioHarness(
         private val testScope: TestScope,
@@ -1031,6 +1293,7 @@ class AudioPreviewControllerTest {
         var sampleBlock: suspend () -> Pair<LoadedAudioFile, LoadedAudioFile> = { error("Set sampleBlock in the test") }
         var normalizeBlock: suspend (PcmClip, PcmClip) -> Pair<PcmClip, PcmClip> = { a, b -> a to b }
         var normalizeCalls = 0
+        var encodeBlock: (PcmClip) -> ByteArray = ::encodeWavPcm16
         var recordBlock: suspend (String, () -> Boolean, (Long) -> Unit) -> RecordedTake = { _, shouldStop, _ ->
             waitForStop(shouldStop)
         }
@@ -1069,6 +1332,7 @@ class AudioPreviewControllerTest {
                 normalizeCalls++
                 normalizeBlock(a, b)
             },
+            encodeWav = { encodeBlock(it) },
             recordTake = { baseName, shouldStop, onProgress, anchor ->
                 receivedAnchors += anchor
                 anchoredRecordBlock(baseName, shouldStop, onProgress, anchor)
@@ -1097,6 +1361,22 @@ class AudioPreviewControllerTest {
         suspend fun waitForStop(shouldStop: () -> Boolean): RecordedTake {
             while (!shouldStop()) delay(10)
             return RecordedTake(PcmClip(shortArrayOf(1, 2, 3), 48_000), TakeStopReason.Requested, null)
+        }
+
+        /** Makes saves wait until the returned gate completes, as a slow write would. */
+        fun holdSaves(): CompletableDeferred<Unit> {
+            val gate = CompletableDeferred<Unit>()
+            saveBlock = { name, wav ->
+                gate.await()
+                savedRecordings += name to wav
+            }
+            return gate
+        }
+
+        /** Replaces the fake normalizer and renderer with the real ones, for tests that compare samples. */
+        fun useRealMixing() {
+            normalizeBlock = { a, b -> normalizePreviewRates(a, b) }
+            renderBlock = { a, b, settings -> preparePreview(a, b, settings) }
         }
 
         fun selectPair(a: LoadedAudioFile, b: LoadedAudioFile) {

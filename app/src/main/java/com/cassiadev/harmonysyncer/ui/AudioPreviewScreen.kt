@@ -262,6 +262,7 @@ fun AudioPreviewScreen(
                     formatRecordingElapsed(phase.elapsedMs),
                 )
                 is PreviewPhase.SavingRecording -> stringResource(R.string.status_saving_recording)
+                PreviewPhase.Exporting -> stringResource(R.string.status_exporting)
                 // The metronome sheet covers the screen while it runs; the line reads as when idle.
                 PreviewPhase.Idle, is PreviewPhase.Metronome -> if (bothSelected) {
                     stringResource(R.string.status_ready)
