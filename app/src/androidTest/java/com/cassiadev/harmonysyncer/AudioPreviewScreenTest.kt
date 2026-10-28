@@ -524,6 +524,39 @@ class AudioPreviewScreenTest {
         compose.waitForIdle()
     }
 
+    @Test
+    fun exportButtonReplacesTheSampleLinkOnceBothFilesAreChosen() {
+        var exports = 0
+        val state = show(buildReadyState().copy(trackB = null), onExport = { exports++ })
+        compose.onNodeWithTag(AudioPreviewTags.EXPORT).assertDoesNotExist()
+        compose.onNodeWithTag(AudioPreviewTags.SAMPLE).assertExists()
+
+        state.value = buildReadyState()
+
+        compose.onNodeWithTag(AudioPreviewTags.SAMPLE).assertDoesNotExist()
+        compose.onNodeWithTag(AudioPreviewTags.EXPORT).performScrollTo().assertIsEnabled()
+            .assertTextContains("합본 저장").performClick()
+        assertEquals(1, exports)
+    }
+
+    @Test
+    fun exportingShowsItsStatusAndLocksControls() {
+        show(buildReadyState().copy(phase = PreviewPhase.Exporting))
+
+        compose.onNodeWithText("합본을 저장하는 중입니다…").assertExists()
+        compose.onNodeWithText(EXPORT_LOCK_NOTICE).assertExists()
+        compose.onNodeWithText(LOCK_NOTICE).assertDoesNotExist()
+        for (tag in listOf(
+            AudioPreviewTags.EXPORT,
+            AudioPreviewTags.PLAY,
+            AudioPreviewTags.VOLUME_B,
+            AudioPreviewTags.TIMING,
+            AudioPreviewTags.SELECT_B,
+        )) {
+            compose.onNodeWithTag(tag).assertIsNotEnabled()
+        }
+    }
+
     private fun show(
         initial: PreviewUiState,
         onSettingsChange: (MixSettings) -> Unit = {},
@@ -534,6 +567,7 @@ class AudioPreviewScreenTest {
         onMetronomeChange: (MetronomeSettings) -> Unit = {},
         onStartMetronome: () -> Unit = {},
         onStopMetronome: () -> Unit = {},
+        onExport: () -> Unit = {},
     ): MutableState<PreviewUiState> {
         val state = mutableStateOf(initial)
         compose.setContent {
@@ -548,6 +582,7 @@ class AudioPreviewScreenTest {
                     onMetronomeChange = onMetronomeChange,
                     onStartMetronome = onStartMetronome,
                     onStopMetronome = onStopMetronome,
+                    onExport = onExport,
                 )
             }
         }
@@ -566,6 +601,7 @@ class AudioPreviewScreenTest {
     private companion object {
         const val LOCK_NOTICE = "재생 중에는 바꿀 수 없습니다. 정지하면 다시 조절할 수 있습니다."
         const val RECORDING_LOCK_NOTICE = "녹음 중에는 바꿀 수 없습니다. 녹음을 멈추면 다시 조절할 수 있습니다."
+        const val EXPORT_LOCK_NOTICE = "저장하는 동안에는 바꿀 수 없습니다. 저장이 끝나면 다시 조절할 수 있습니다."
         const val KEPT_NOTICE = "기존 파일과 설정은 그대로입니다."
         const val CLICK_HINT = "녹음 중에는 이어폰으로 나갈 때만 납니다. 블루투스 스피커로는 녹음에 섞일 수 있습니다"
     }

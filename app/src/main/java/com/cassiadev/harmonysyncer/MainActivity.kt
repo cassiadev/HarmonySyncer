@@ -72,6 +72,7 @@ class MainActivity : ComponentActivity() {
                         onMetronomeChange = controller::updateMetronome,
                         onStartMetronome = controller::startMetronome,
                         onStopMetronome = controller::stopMetronome,
+                        onExport = controller::exportMix,
                     )
                 }
             }
