@@ -31,6 +31,7 @@ import androidx.test.espresso.intent.matcher.IntentMatchers.hasAction
 import androidx.test.platform.app.InstrumentationRegistry
 import com.cassiadev.harmonysyncer.audio.AudioPreviewController
 import com.cassiadev.harmonysyncer.audio.LoadedAudioFile
+import com.cassiadev.harmonysyncer.audio.MIX_EXPORTED_NOTICE
 import com.cassiadev.harmonysyncer.audio.MetronomeSettings
 import com.cassiadev.harmonysyncer.audio.PcmClip
 import com.cassiadev.harmonysyncer.audio.RECORDING_INTERRUPTED_NOTICE
@@ -240,6 +241,31 @@ class MainActivityRecreationTest {
         }
     }
 
+    @Test
+    fun exportContinuesAcrossRecreationAndTheBackground() {
+        val saves = AtomicInteger()
+        val writing = CompletableDeferred<Unit>()
+        useFakeController(saveRecording = { _, _ ->
+            writing.await()
+            saves.incrementAndGet()
+        })
+        launch().use { scenario ->
+            selectBoth(FAKE_NAME)
+            compose.onNodeWithTag(AudioPreviewTags.EXPORT).performScrollTo().performClick()
+            compose.waitUntilExactlyOneExists(hasText(EXPORTING_STATUS), 5_000)
+
+            // Rotating and going home both call stop(), which must leave the save running.
+            scenario.recreate()
+            scenario.moveToState(Lifecycle.State.CREATED)
+            scenario.moveToState(Lifecycle.State.RESUMED)
+            compose.waitUntilExactlyOneExists(hasText(EXPORTING_STATUS), 5_000)
+            writing.complete(Unit)
+
+            compose.waitUntilExactlyOneExists(hasText(MIX_EXPORTED_NOTICE), 5_000)
+            assertEquals(1, saves.get())
+        }
+    }
+
     /** Polls like the real recorder and returns a short take once the controller asks it to stop. */
     private suspend fun recordUntilStopped(baseName: String, shouldStop: () -> Boolean, onProgress: (Long) -> Unit): RecordedTake {
         onProgress(0)
@@ -299,5 +325,6 @@ class MainActivityRecreationTest {
 
     private companion object {
         const val FAKE_NAME = "fake.wav"
+        const val EXPORTING_STATUS = "합본을 저장하는 중입니다…"
     }
 }
