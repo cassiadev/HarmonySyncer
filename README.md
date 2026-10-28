@@ -7,7 +7,7 @@ Choose two recordings through the system file picker, adjust their volumes and
 relative start positions, and listen to the resulting mix.
 
 The app aligns both files at supplied onsets of `0`, preserving each file's beginning. It does **not** detect delays automatically.
-Pitch changes, playback drift correction, and audio export are outside the current scope.
+Pitch changes and playback drift correction are outside the current scope.
 
 ## Using the preview
 
@@ -29,12 +29,22 @@ Pitch changes, playback drift correction, and audio export are outside the curre
    playback, and the screen says why: the loading card shows progress, the status line
    names the current step, and a lock notice appears while mixing or playing. Changes
    are not applied in real time.
+4. Tap **Save mix** (합본 저장) to keep the mix with the current volumes and timing. It is
+   saved beside the app's recordings, in `Recordings/HarmonySyncer/` on Android 12 or later
+   and `Music/HarmonySyncer/` on Android 10 and 11, as `HarmonySyncer-Mix-<date>-<time>.wav`:
+   16-bit mono PCM at the higher of the two sample rates. The file holds the same samples the
+   preview plays, so it can sound quieter than its sources (see the gain note below), and it
+   is never trimmed. Timing offsets can make a mix up to 60.3 seconds long, and only a mix of
+   60 seconds or less can be chosen again as a track. Saving continues while the app is in
+   the background.
 
 To hear the app without your own files, tap **Try the sample** (샘플로 들어보기) on the start
 screen. It loads an eight-second soprano (A) and alto (B) excerpt of Bruckner's *Locus iste*
 from the Dagstuhl ChoirSet, cut at the same measure, and you can adjust it like any pair.
 The recordings are licensed under CC BY 4.0; the app shows the credit and dataset link while
 a sample track is loaded. See [the bundled vocals notes](app/src/main/assets/vocals/README.md).
+A saved mix that contains a sample track must credit its source and license, and say that it
+was changed, when you publish or distribute it; the app reminds you when it saves one.
 
 Each volume is multiplied by `0.5` before mixing, so a 100% setting gives that track a
 linear gain of `0.5`. This preserves mixing headroom, with PCM16 saturation protection.
@@ -45,7 +55,8 @@ either file also resets the offset to 0 ms and keeps the volume settings. Cancel
 picker or failing to load a replacement retains the previous file and settings.
 WAV and M4A may be used together, including recordings with different sample rates.
 Playback stops when the app goes into the background; leaving the screen
-releases playback resources and cancels pending work. There is no export action.
+releases playback resources and cancels pending work. Leaving the screen while a mix is
+being saved cancels the mixing, but a file write that has started finishes.
 
 ## Build and run
 
@@ -131,6 +142,8 @@ Use two short compatible files with clear clicks or onsets to check the
 - Turn on system dark mode and the largest font size; confirm nothing is clipped and text stays
   readable.
 - Background the app and leave the screen; confirm playback stops.
+- Save a mix, find it in the recordings folder through the file picker, and play it; confirm it
+  sounds like the preview.
 
 ## Planned work
 
