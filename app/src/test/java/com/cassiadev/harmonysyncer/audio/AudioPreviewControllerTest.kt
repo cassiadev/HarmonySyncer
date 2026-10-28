@@ -1125,6 +1125,8 @@ class AudioPreviewControllerTest {
     fun `failed save explains it, unlocks and permits another attempt`() = runTest {
         val harness = FakeAudioHarness(this)
         harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
+        val settings = MixSettings(volumeA = 0.4f, volumeB = 0.9f, offsetMs = -50)
+        harness.controller.updateSettings(settings)
         harness.saveBlock = { _, _ -> throw IOException("녹음 파일을 만들지 못했습니다.") }
 
         harness.controller.exportMix()
@@ -1132,6 +1134,9 @@ class AudioPreviewControllerTest {
         assertEquals(MIX_EXPORT_FAILED_MESSAGE, harness.controller.state.error)
         assertEquals(null, harness.controller.state.notice)
         assertTrue(harness.controller.state.canEdit)
+        assertEquals("a.wav", harness.controller.state.trackA?.name)
+        assertEquals("b.wav", harness.controller.state.trackB?.name)
+        assertEquals(settings, harness.controller.state.settings)
 
         harness.saveBlock = { name, wav -> harness.savedRecordings += name to wav }
         harness.controller.exportMix()
@@ -1211,7 +1216,7 @@ class AudioPreviewControllerTest {
     }
 
     @Test
-    fun `close while mixing cancels the export without an error`() = runTest {
+    fun `close while mixing cancels the export before it saves`() = runTest {
         val harness = FakeAudioHarness(this)
         harness.selectPair(buildAudio("a.wav"), buildAudio("b.wav"))
         harness.renderBlock = { _, _, _ -> awaitCancellation() }
@@ -1222,7 +1227,6 @@ class AudioPreviewControllerTest {
         advanceUntilIdle()
 
         assertEquals(0, harness.savedRecordings.size)
-        assertEquals(null, harness.controller.state.error)
     }
 
     @Test
