@@ -33,6 +33,9 @@ private val RECORDING_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPatte
 internal fun buildRecordingBaseName(slot: TrackSlot, time: LocalDateTime) =
     "HarmonySyncer-${slot.name}-${time.format(RECORDING_TIME_FORMAT)}"
 
+/** `HarmonySyncer-Mix-20261028-153012`; a saved mix sits beside the recordings and adds `.wav`. */
+internal fun buildMixBaseName(time: LocalDateTime) = "HarmonySyncer-Mix-${time.format(RECORDING_TIME_FORMAT)}"
+
 /** [isSample] marks the bundled harmony sample, whose recordings need a CC BY credit on screen. */
 data class ClipInfo(val name: String, val sampleRate: Int, val frameCount: Int, val isSample: Boolean = false) {
     val durationSeconds: Float get() = frameCount / sampleRate.toFloat()
@@ -58,6 +61,8 @@ sealed interface PreviewPhase {
     ) : PreviewPhase
     /** Saving the finished take of [slot] to shared storage. */
     data class SavingRecording(val slot: TrackSlot) : PreviewPhase
+    /** Mixing both slots and saving the result to shared storage. */
+    data object Exporting : PreviewPhase
     /** The metronome running on its own; [startNanos] is its first beat, null until the click track has one. */
     data class Metronome(val startNanos: Long?) : PreviewPhase
 }
@@ -77,6 +82,7 @@ data class PreviewUiState(
     val isLoading: Boolean get() = phase is PreviewPhase.Loading || phase == PreviewPhase.LoadingSample
     val isPlaying: Boolean get() = phase == PreviewPhase.Rendering || phase == PreviewPhase.Playing
     val isRecording: Boolean get() = phase is PreviewPhase.Recording || phase is PreviewPhase.SavingRecording
+    val isExporting: Boolean get() = phase == PreviewPhase.Exporting
     val canEdit: Boolean get() = phase == PreviewPhase.Idle
     val canPlay: Boolean
         get() = canEdit && trackA != null && trackB != null
@@ -97,6 +103,7 @@ class AudioPreviewController internal constructor(
     },
     // The identity is always correct: render still resamples clips that were not normalized.
     private val normalize: suspend (PcmClip, PcmClip) -> Pair<PcmClip, PcmClip> = { a, b -> a to b },
+    private val encodeWav: (PcmClip) -> ByteArray = ::encodeWavPcm16,
     private val recordTake: suspend (
         baseName: String,
         shouldStop: () -> Boolean,
@@ -382,7 +389,8 @@ class AudioPreviewController internal constructor(
             if (state.isRecording) {
                 recoveredDuringTake += count
             } else {
-                state = state.copy(notice = buildRecoveredNotice(count))
+                // Kept beside a notice that is still showing, such as a mix saved just before.
+                state = state.copy(notice = listOfNotNull(state.notice, buildRecoveredNotice(count)).joinToString(" "))
             }
         }
     }
@@ -486,19 +494,10 @@ class AudioPreviewController internal constructor(
         state = state.copy(phase = PreviewPhase.Rendering, error = null, failedSlot = null, notice = null)
         playbackJob = scope.launch(start = CoroutineStart.LAZY) {
             try {
-                val (normalized, preview) = withContext(renderDispatcher) {
-                    try {
-                        val clips = cached ?: normalize(a, b)
-                        clips to render(clips.first, clips.second, settings)
-                    } catch (outOfMemory: OutOfMemoryError) {
-                        // Only rate conversion and mixing are caught: their partial buffers are unreachable now,
-                        // so editing can resume.
-                        throw IllegalStateException(
-                            "메모리가 부족해 두 음성을 합치지 못했습니다. 더 짧은 파일로 다시 시도해 주세요.",
-                            outOfMemory,
-                        )
-                    }
-                }
+                val (normalized, preview) = renderMix(
+                    a, b, settings, cached,
+                    outOfMemoryMessage = "메모리가 부족해 두 음성을 합치지 못했습니다. 더 짧은 파일로 다시 시도해 주세요.",
+                ) { it }
                 ensureActive()
                 // A stopped session or replaced file must not leave clips from another pair behind.
                 if (session == playbackSession && clipA === a && clipB === b) normalizedClips = normalized
@@ -522,6 +521,70 @@ class AudioPreviewController internal constructor(
             }
         }
         playbackJob?.start()
+    }
+
+    /**
+     * Saves the mix [play] would play with the current settings, as the same digital samples: each voice is mixed at
+     * half gain (see `mixWithOffset`), and the phone's volume is not part of the file. Unlike playback, [stop] (the app
+     * going to the background or rotating) does not cancel it; [close] cancels the mixing, but a write that has
+     * started finishes, as a take's save does.
+     */
+    fun exportMix() {
+        if (closed || !state.canPlay) return
+        val a = clipA ?: return
+        val b = clipB ?: return
+        val settings = state.settings
+        val cached = normalizedClips
+        val name = "${buildMixBaseName(currentTime())}.wav"
+        // A sample slot at 0% adds nothing to the mix, so it needs no credit.
+        val hasSample = (state.trackA?.isSample == true && settings.volumeA > 0f) ||
+            (state.trackB?.isSample == true && settings.volumeB > 0f)
+        state = state.copy(phase = PreviewPhase.Exporting, error = null, failedSlot = null, notice = null)
+        scope.launch {
+            try {
+                val (normalized, wav) = renderMix(a, b, settings, cached, MIX_EXPORT_OUT_OF_MEMORY_MESSAGE, encodeWav)
+                ensureActive()
+                if (clipA === a && clipB === b) normalizedClips = normalized
+                withContext(ioDispatcher + NonCancellable) { saveRecording(name, wav) }
+                if (!closed) {
+                    val saved = if (hasSample) "$MIX_EXPORTED_NOTICE $MIX_SAMPLE_CREDIT_NOTICE" else MIX_EXPORTED_NOTICE
+                    // Kept beside a recovery notice that arrived while saving.
+                    state = state.copy(notice = listOfNotNull(state.notice, saved).joinToString(" "))
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: Exception) {
+                if (!closed) {
+                    // The whole chain: coroutine stack-trace recovery may wrap the rethrown exception in a copy.
+                    val outOfMemory = generateSequence<Throwable>(failure) { it.cause }.any { it is OutOfMemoryError }
+                    val message = if (outOfMemory) MIX_EXPORT_OUT_OF_MEMORY_MESSAGE else MIX_EXPORT_FAILED_MESSAGE
+                    state = state.copy(error = message, failedSlot = null)
+                }
+            } finally {
+                if (!closed) state = state.copy(phase = PreviewPhase.Idle)
+            }
+        }
+    }
+
+    /**
+     * Rate-matches [a] and [b] (unless [cached]) and mixes them on the render dispatcher, then applies [finish].
+     * [play] and [exportMix] share it, so a saved mix holds the samples a preview plays.
+     */
+    private suspend fun <R> renderMix(
+        a: PcmClip,
+        b: PcmClip,
+        settings: MixSettings,
+        cached: Pair<PcmClip, PcmClip>?,
+        outOfMemoryMessage: String,
+        finish: (PcmClip) -> R,
+    ): Pair<Pair<PcmClip, PcmClip>, R> = withContext(renderDispatcher) {
+        try {
+            val clips = cached ?: normalize(a, b)
+            clips to finish(render(clips.first, clips.second, settings))
+        } catch (outOfMemory: OutOfMemoryError) {
+            // Only this work is caught: its partial buffers are unreachable now, so editing can resume.
+            throw IllegalStateException(outOfMemoryMessage, outOfMemory)
+        }
     }
 
     fun stop() {

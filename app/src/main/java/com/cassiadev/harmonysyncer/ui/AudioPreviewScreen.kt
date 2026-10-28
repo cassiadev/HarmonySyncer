@@ -96,6 +96,7 @@ object AudioPreviewTags {
     const val RECORDING_TIME = "recordingTime"
     const val METRONOME = "metronome"
     const val METRONOME_BEATS = "metronomeBeats"
+    const val EXPORT = "export"
 }
 
 // Dataset record with the CC BY 4.0 license for the bundled Locus iste excerpt.
@@ -121,6 +122,7 @@ fun AudioPreviewScreen(
     onMetronomeChange: (MetronomeSettings) -> Unit = {},
     onStartMetronome: () -> Unit = {},
     onStopMetronome: () -> Unit = {},
+    onExport: () -> Unit = {},
 ) {
     val bothSelected = state.trackA != null && state.trackB != null
     var timingOpen by rememberSaveable { mutableStateOf(false) }
@@ -243,6 +245,13 @@ fun AudioPreviewScreen(
                     iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (state.isExporting) {
+                Notice(
+                    icon = R.drawable.ic_lock,
+                    text = stringResource(R.string.export_lock_notice),
+                    iconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         val selectedCount = listOfNotNull(state.trackA, state.trackB).size
@@ -262,6 +271,7 @@ fun AudioPreviewScreen(
                     formatRecordingElapsed(phase.elapsedMs),
                 )
                 is PreviewPhase.SavingRecording -> stringResource(R.string.status_saving_recording)
+                PreviewPhase.Exporting -> stringResource(R.string.status_exporting)
                 // The metronome sheet covers the screen while it runs; the line reads as when idle.
                 PreviewPhase.Idle, is PreviewPhase.Metronome -> if (bothSelected) {
                     stringResource(R.string.status_ready)
@@ -292,6 +302,19 @@ fun AudioPreviewScreen(
                 Text(stringResource(R.string.try_sample), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.width(6.dp))
                 Icon(painterResource(R.drawable.ic_chevron_right), contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+        } else {
+            // The sample link's place: it leaves once both files are chosen.
+            TextButton(
+                onClick = onExport,
+                enabled = state.canPlay,
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .heightIn(min = 48.dp)
+                    .testTag(AudioPreviewTags.EXPORT),
+            ) {
+                Text(stringResource(R.string.export_mix), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
         Text(
