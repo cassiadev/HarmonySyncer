@@ -77,6 +77,10 @@ class PreviewQualityTest {
         }
     }
 
+    /**
+     * Phase repeats every cycle, so this sees only drift within one cycle. PreviewLongFileTest pins the absolute
+     * position with a click every second; a 48-frame shift left this reading unchanged and failed that test.
+     */
     @Test
     fun `a sixty second tone keeps its timing`() {
         for (frequency in listOf(1_000, 5_000)) {
