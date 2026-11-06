@@ -13,6 +13,8 @@ private const val SOUND_LEVEL = 0.1
 private const val GUARD_MS = 5
 // First guess: the best match must stand out twice as much as any other position.
 private const val MIN_PEAK_RATIO = 2.0
+// First guess: real clocks differ far less, so a wider gap means the windows matched different events.
+private const val MAX_SPACING_ERROR = 0.01
 
 /**
  * [centerFrame] is the middle of the window in A. [offsetFrames] is B's time minus A's for the sound in this
@@ -20,7 +22,10 @@ private const val MIN_PEAK_RATIO = 2.0
  */
 internal data class WindowOffset(val centerFrame: Int, val offsetFrames: Int, val peakRatio: Double)
 
-/** Offsets at the start, middle and end of A's sound, at [sampleRate]; [isCertain] needs all three to stand out. */
+/**
+ * Offsets at the start, middle and end of A's sound, at [sampleRate]. [isCertain] needs all three to stand out
+ * and to sit as far apart in B as they do in A, so windows cannot all lean on one event.
+ */
 internal data class OffsetEstimate(
     val sampleRate: Int,
     val windows: List<WindowOffset>,
@@ -79,8 +84,12 @@ internal fun estimateTimeOffsets(a: PcmClip, b: PcmClip): OffsetEstimate {
         sampleRate = rate,
         windows = windows,
         growthMsPerMinute = if (spanFrames == 0) 0.0 else growthFrames * 60_000.0 / spanFrames,
-        isCertain = windows.all { it.peakRatio >= MIN_PEAK_RATIO },
+        isCertain = windows.all { it.peakRatio >= MIN_PEAK_RATIO } && keepsSpacing(windows),
     )
+}
+
+private fun keepsSpacing(windows: List<WindowOffset>): Boolean = windows.zipWithNext().all { (earlier, later) ->
+    abs(later.offsetFrames - earlier.offsetFrames) <= MAX_SPACING_ERROR * (later.centerFrame - earlier.centerFrame)
 }
 
 /** Where the start, middle and end windows of the sound begin, or nothing for silence. */

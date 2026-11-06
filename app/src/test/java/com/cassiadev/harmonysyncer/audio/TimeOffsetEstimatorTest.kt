@@ -75,6 +75,20 @@ class TimeOffsetEstimatorTest {
         assertFalse(estimateTimeOffsets(buildClip(signal), buildClip(buildTimingSignal(20, RATE, seed = 1))).isCertain)
     }
 
+    /** Each window of A holds the same click and B has it once, so every window finds that one click alone. */
+    @Test
+    fun `windows that lean on one event are uncertain`() {
+        val click = signal.copyOf(RATE / 50)
+        val a = ShortArray(50 * RATE)
+        for (frame in listOf(0, 24_500 * RATE / 1_000, 49 * RATE)) click.copyInto(a, frame)
+        val b = ShortArray(10 * RATE)
+        click.copyInto(b, 5 * RATE)
+
+        val estimate = estimateTimeOffsets(buildClip(a), buildClip(b))
+
+        assertFalse(estimate.windows.toString(), estimate.isCertain)
+    }
+
     @Test
     fun `a long silent lead in does not move the start window`() {
         val delayed = buildClip(prepend(480_000, signal))
