@@ -74,6 +74,8 @@ class PreviewQualityTest {
             val fit = fitTone(output, 1_200, FIT_FRAMES, frequency, TARGET_RATE)
             val gainDb = 20 * log10(fit.amplitude / TONE_AMPLITUDE)
             report("tone $frequency Hz: gain %.3f dB, other content %.1f dB".format(gainDb, fit.residualDb))
+            if (frequency <= 19_000) assertEquals("gain at $frequency Hz", 0.0, gainDb, MAX_GAIN_ERROR_DB)
+            if (frequency <= 18_000) assertTrue("other content at $frequency Hz: ${fit.residualDb}", fit.residualDb <= MAX_OTHER_CONTENT_DB)
         }
     }
 
@@ -90,6 +92,7 @@ class PreviewQualityTest {
             for (from in listOf(48_000, 1_440_000, 2_822_400)) {
                 val fit = fitTone(output, from, FIT_FRAMES, frequency, TARGET_RATE)
                 report("60 s tone $frequency Hz at frame $from: delay %.5f frames".format(fit.delayFrames))
+                assertEquals("delay at frame $from", 0.0, fit.delayFrames, MAX_DELAY_FRAMES)
             }
         }
     }
@@ -157,5 +160,10 @@ class PreviewQualityTest {
         const val TONE_AMPLITUDE = 12_000.0
         const val FIT_FRAMES = 9_600 // 0.2 s: a whole number of cycles for any multiple of 5 Hz.
         const val REFERENCE_DIVISOR = 4
+
+        // Set with the user from the first measurement, where these read 0.04 dB, -62.8 dB and 0.0004 frames.
+        const val MAX_GAIN_ERROR_DB = 0.1
+        const val MAX_OTHER_CONTENT_DB = -60.0
+        const val MAX_DELAY_FRAMES = 0.01
     }
 }
