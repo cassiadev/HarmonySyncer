@@ -14,7 +14,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
+import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.roundToInt
+import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
@@ -23,6 +26,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -38,6 +42,8 @@ private const val LONG_CLIP_SECONDS = 59
 private const val LONG_CLIP_RUNS = 3
 // First guess: a chunk counts as found when it matches half again better than noise that never played.
 private const val CONTROL_MARGIN = 1.5
+// First guess: the control alone fails on a silent or steady background, where it reads near zero.
+private const val MIN_MATCH_COEFFICIENT = 0.1
 
 /**
  * Plays through the real player and records through the real recorder, finding the sound in the take. The
@@ -158,32 +164,14 @@ class PlaybackLoopbackDeviceTest {
 
     /** Records while [script] runs; the first sample is captured at [Capture.firstFrameNanos]. */
     private fun recordWhile(script: suspend () -> Unit): Capture {
-        val anchor = TakeAnchor()
-        val firstFrameNanos = AtomicLong()
-        val finished = AtomicBoolean(false)
-        val failure = AtomicReference<Throwable?>(null)
-        val running = thread {
-            try {
-                val stamp = runBlocking { anchor.stamp.await() }
-                val start = System.nanoTime() + COUNT_IN_LEAD_NANOS
-                anchor.firstFrame = frameAt(start, stamp.time, stamp.sampleRate)
-                firstFrameNanos.set(start)
-                while (System.nanoTime() < start + 100_000_000L) Thread.sleep(1)
-                runBlocking { script() }
-            } catch (thrown: Throwable) {
-                failure.set(thrown)
-            } finally {
-                finished.set(true)
-            }
-        }
         val recorder = TakeRecorder(context)
-        val take = recorder.record(openDraft = { null }, shouldStop = finished::get, onProgress = {}, anchor = anchor)
-        running.join()
-        failure.get()?.let { throw it }
-        val stamp = runBlocking { anchor.stamp.await() }
+        val run = recordAround({ anchor, shouldStop ->
+            recorder.record(openDraft = { null }, shouldStop = shouldStop, onProgress = {}, anchor = anchor)
+        }, script)
+        val take = run.take
         check(take.clip.sampleRate == RATE) { "capture rate ${take.clip.sampleRate}" }
-        report("capture: ${take.clip.samples.size} frames, stamp measured ${stamp.measured}, input ${recorder.lastRoutedInputType}, stop ${take.stopReason}")
-        return Capture(take.clip.samples, take.clip.sampleRate, firstFrameNanos.get(), stamp.measured)
+        report("capture: ${take.clip.samples.size} frames, stamp measured ${run.stamp.measured}, input ${recorder.lastRoutedInputType}, stop ${take.stopReason}")
+        return Capture(take.clip.samples, take.clip.sampleRate, run.firstFrameNanos, run.stamp.measured)
     }
 
     private suspend fun playThenStop(player: PcmPreviewPlayer): Play = coroutineScope {
@@ -205,7 +193,7 @@ class PlaybackLoopbackDeviceTest {
         val requestFrame = capture.captureFrameAt(requestNanos)
         val windowEnd = nextRequestNanos?.let(capture::captureFrameAt) ?: capture.samples.size
         val controlChunk = controlClip.copyOfRange(rate, rate + rate / 10)
-        val latencyEnd = minOf(requestFrame + rate * 17 / 10, windowEnd)
+        val latencyEnd = minOf(requestFrame + rate * 17 / 10, windowEnd - controlChunk.size + 1)
         val control = findBestMatch(capture.samples, controlChunk, requestFrame + rate - rate / 100, latencyEnd)?.coefficient ?: 0.0
         val latency = findLatencyFrames(capture.samples, noiseClip, rate, requestFrame, windowEnd, control * CONTROL_MARGIN)
             ?: return PlayResult(null, null, null, control * CONTROL_MARGIN)
@@ -313,6 +301,33 @@ class PlaybackLoopbackDeviceTest {
         assertTrue(lines.toString(), lines.any { "Normal mixer raw underrun" in it })
     }
 
+    /** Interrupted before the first stamp, as when the microphone is silenced at once. */
+    @Test(timeout = 5_000)
+    fun aTakeThatEndsWithoutAStampFailsInsteadOfWaiting() {
+        val take = RecordedTake(PcmClip(ShortArray(1), RATE), TakeStopReason.Interrupted, null)
+
+        val failure = assertThrows(IllegalStateException::class.java) { recordAround({ _, _ -> take }) {} }
+
+        assertEquals("take ended before its capture stamp", failure.message)
+    }
+
+    /** A steady tone can beat the control by chance, because each search then reads one fixed value. */
+    @Test
+    fun aToneBackgroundIsNotFound() {
+        val tone = ShortArray(3 * RATE) { (300 * sin(2 * PI * 436 * it / RATE)).roundToInt().toShort() }
+
+        assertNull(findLatencyFrames(tone, buildNoiseClip(1), RATE, 0, Int.MAX_VALUE, 0.0))
+    }
+
+    @Test
+    fun aChunkPastTheWindowIsNotRead() {
+        val clip = buildNoiseClip(1)
+        val capture = buildFakeCapture(clip)
+
+        assertNull(findLatencyFrames(capture, clip, RATE, 0, 64_700, 0.1))
+        assertEquals(8, findSoundSpan(capture, clip, RATE, 12_000, 12_000 + 9_603, 0.1)?.lastChunk)
+    }
+
     /** A silent capture gives a zero control, so the real threshold is zero too. */
     @Test
     fun digitalSilenceIsNotFoundAtAZeroThreshold() {
@@ -345,6 +360,39 @@ class PlaybackLoopbackDeviceTest {
     }
 }
 
+internal class RecordedRun(val take: RecordedTake, val firstFrameNanos: Long, val stamp: CaptureStamp)
+
+/** Runs [script] from just after the take's first kept sample, which is captured at [RecordedRun.firstFrameNanos]. */
+internal fun recordAround(record: (TakeAnchor, shouldStop: () -> Boolean) -> RecordedTake, script: suspend () -> Unit): RecordedRun {
+    val anchor = TakeAnchor()
+    val firstFrameNanos = AtomicLong()
+    val finished = AtomicBoolean(false)
+    val failure = AtomicReference<Throwable?>(null)
+    val running = thread {
+        try {
+            val stamp = runBlocking { anchor.stamp.await() }
+            val start = System.nanoTime() + COUNT_IN_LEAD_NANOS
+            anchor.firstFrame = frameAt(start, stamp.time, stamp.sampleRate)
+            firstFrameNanos.set(start)
+            while (System.nanoTime() < start + 100_000_000L) Thread.sleep(1)
+            runBlocking { script() }
+        } catch (thrown: Throwable) {
+            failure.set(thrown)
+        } finally {
+            finished.set(true)
+        }
+    }
+    val take = try {
+        record(anchor, finished::get)
+    } finally {
+        anchor.stamp.cancel() // Wakes the thread above if the take ended before its first stamp.
+    }
+    running.join()
+    check(!anchor.stamp.isCancelled) { "take ended before its capture stamp" }
+    failure.get()?.let { throw it }
+    return RecordedRun(take, firstFrameNanos.get(), runBlocking { anchor.stamp.await() })
+}
+
 internal class ChunkMatch(val frame: Int, val coefficient: Double)
 
 /** The first and last 20 ms chunks of a clip found where they belong in a capture. */
@@ -358,8 +406,7 @@ internal fun findChangedLines(before: List<String>, after: List<String>): List<S
     return if (before.size == after.size) changed else changed + "line count ${before.size} -> ${after.size}"
 }
 
-/** Zero never counts: silence zeroes the control, and with it the threshold. */
-private fun standsOut(coefficient: Double, threshold: Double) = coefficient > 0.0 && coefficient >= threshold
+private fun standsOut(coefficient: Double, threshold: Double) = coefficient >= maxOf(threshold, MIN_MATCH_COEFFICIENT)
 
 /** |normalized correlation| of [chunk] with [capture] at [frame]; 0 when it does not fit there. */
 internal fun coefficientAt(capture: ShortArray, chunk: ShortArray, frame: Int): Double {
@@ -390,7 +437,7 @@ internal fun findBestMatch(capture: ShortArray, chunk: ShortArray, from: Int, un
 internal fun findLatencyFrames(capture: ShortArray, clip: ShortArray, rate: Int, requestFrame: Int, windowEnd: Int, threshold: Double): Int? {
     val expected = requestFrame + rate
     val chunk = clip.copyOfRange(rate, rate + rate / 10)
-    val match = findBestMatch(capture, chunk, expected - rate / 100, minOf(expected + rate * 7 / 10, windowEnd))
+    val match = findBestMatch(capture, chunk, expected - rate / 100, minOf(expected + rate * 7 / 10, windowEnd - chunk.size + 1))
     return match?.takeIf { standsOut(it.coefficient, threshold) }?.let { it.frame - expected }
 }
 
@@ -399,9 +446,10 @@ internal fun findChunkCoefficients(capture: ShortArray, clip: ShortArray, rate: 
     val length = rate / 50
     return (0 until clip.size / length).map { index ->
         val frame = startFrame + index * length
-        if (frame + length > windowEnd) return@map 0.0
+        val tries = frame - 5..frame + 5
+        if (tries.last + length > windowEnd) return@map 0.0
         val chunk = clip.copyOfRange(index * length, (index + 1) * length)
-        (frame - 5..frame + 5).maxOf { coefficientAt(capture, chunk, it) }
+        tries.maxOf { coefficientAt(capture, chunk, it) }
     }
 }
 
