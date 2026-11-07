@@ -4,7 +4,10 @@ import java.io.File
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
-/** Runs only when a path is given; run it with --no-configuration-cache --rerun, or the path may not arrive. */
+/**
+ * Runs only when a path is given; run it with --no-configuration-cache --rerun, or the path may not arrive.
+ * Pairs are read at 13 positions, the count behind the recorded results; RECORDING_PAIR_WINDOWS changes it.
+ */
 class RecordingPairMeasurementTest {
     @Test
     fun `writes the timing signal when a path is given`() {
@@ -22,7 +25,7 @@ class RecordingPairMeasurementTest {
 
         val clipA = File(pathA!!).inputStream().buffered().use(::readWavPcm16)
         val clipB = File(pathB!!).inputStream().buffered().use(::readWavPcm16)
-        val estimate = estimateTimeOffsets(clipA, clipB, System.getenv("RECORDING_PAIR_WINDOWS")?.toInt() ?: 3)
+        val estimate = estimateTimeOffsets(clipA, clipB, System.getenv("RECORDING_PAIR_WINDOWS")?.toInt() ?: 13)
 
         println("RecordingPair: A ${clipA.samples.size} frames at ${clipA.sampleRate} Hz, B ${clipB.samples.size} frames at ${clipB.sampleRate} Hz")
         println("RecordingPair: compared at ${estimate.sampleRate} Hz, certain ${estimate.isCertain}, growth %.3f ms per minute".format(estimate.growthMsPerMinute))

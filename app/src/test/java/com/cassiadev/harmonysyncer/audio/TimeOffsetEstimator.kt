@@ -23,8 +23,8 @@ private const val MAX_SPACING_ERROR = 0.01
 internal data class WindowOffset(val centerFrame: Int, val offsetFrames: Int, val peakRatio: Double)
 
 /**
- * Offsets at the start, middle and end of A's sound, at [sampleRate]. [isCertain] needs all three to stand out
- * and to sit as far apart in B as they do in A, so windows cannot all lean on one event.
+ * Offsets at windows spread across A's sound, at [sampleRate]. [isCertain] needs every window to stand out and
+ * to sit as far apart in B as it does in A, so windows cannot all lean on one event.
  */
 internal data class OffsetEstimate(
     val sampleRate: Int,
