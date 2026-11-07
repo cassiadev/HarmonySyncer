@@ -90,11 +90,12 @@ internal fun estimateTimeOffsets(a: PcmClip, b: PcmClip, windowCount: Int = 3): 
 
 /**
  * Growth over a minute from the windows that stand out: the median slope between every pair of them, so a window
- * that matched the wrong place cannot pull it. Null unless more than half of the windows stand out.
+ * that matched the wrong place cannot pull it. Null unless more than half of the windows stand out and they
+ * keep their spacing, because windows that lean on one event give a steep slope without any drift.
  */
 internal fun fitGrowthMsPerMinute(windows: List<WindowOffset>): Double? {
     val clear = windows.filter { it.peakRatio >= MIN_PEAK_RATIO }
-    if (clear.size * 2 <= windows.size) return null
+    if (clear.size * 2 <= windows.size || !keepsSpacing(clear)) return null
     val slopes = clear.flatMapIndexed { index, earlier ->
         clear.drop(index + 1).map { later ->
             (later.offsetFrames - earlier.offsetFrames).toDouble() / (later.centerFrame - earlier.centerFrame)

@@ -127,6 +127,18 @@ class TimeOffsetEstimatorTest {
         assertEquals(1.25, fitGrowthMsPerMinute(windows)!!, 0.05)
     }
 
+    /** The windows of `windows that lean on one event are uncertain`, which each stand out alone. */
+    @Test
+    fun `fitted growth refuses windows that lean on one event`() {
+        val windows = listOf(
+            WindowOffset(48_000, 240_000, 12.0),
+            WindowOffset(1_176_480, -936_000, 12.0),
+            WindowOffset(2_304_960, -2_112_000, 12.0),
+        )
+
+        assertNull(fitGrowthMsPerMinute(windows))
+    }
+
     @Test
     fun `fitted growth needs most windows to stand out`() {
         val windows = List(13) { WindowOffset((it + 1) * 200_000, 0, if (it < 6) 3.0 else 1.1) }
