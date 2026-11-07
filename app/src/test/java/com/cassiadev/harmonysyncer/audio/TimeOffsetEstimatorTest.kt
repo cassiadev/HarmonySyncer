@@ -5,6 +5,7 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -111,6 +112,26 @@ class TimeOffsetEstimatorTest {
         assertEquals(List(7) { 240 }, estimate.windows.map { it.offsetFrames })
         val gaps = estimate.windows.zipWithNext { earlier, later -> later.centerFrame - earlier.centerFrame }
         assertTrue(gaps.toString(), gaps.max() - gaps.min() <= 1)
+    }
+
+    @Test
+    fun `fitted growth ignores windows that stand apart`() {
+        val windows = List(13) { index ->
+            val center = (index + 1) * 200_000
+            WindowOffset(center, (center / 48_000.0).roundToInt(), 3.0)
+        }.toMutableList()
+        windows[0] = windows[0].copy(offsetFrames = windows[0].offsetFrames - 85)
+        windows[12] = windows[12].copy(offsetFrames = windows[12].offsetFrames + 11)
+        windows[6] = windows[6].copy(offsetFrames = 900, peakRatio = 1.2)
+
+        assertEquals(1.25, fitGrowthMsPerMinute(windows)!!, 0.05)
+    }
+
+    @Test
+    fun `fitted growth needs most windows to stand out`() {
+        val windows = List(13) { WindowOffset((it + 1) * 200_000, 0, if (it < 6) 3.0 else 1.1) }
+
+        assertNull(fitGrowthMsPerMinute(windows))
     }
 
     private fun assertEveryWindow(expectedFrames: Int, estimate: OffsetEstimate) {

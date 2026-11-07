@@ -26,6 +26,8 @@ class RecordingPairMeasurementTest {
 
         println("RecordingPair: A ${clipA.samples.size} frames at ${clipA.sampleRate} Hz, B ${clipB.samples.size} frames at ${clipB.sampleRate} Hz")
         println("RecordingPair: compared at ${estimate.sampleRate} Hz, certain ${estimate.isCertain}, growth %.3f ms per minute".format(estimate.growthMsPerMinute))
+        val fitted = fitGrowthMsPerMinute(estimate.windows)
+        println("RecordingPair: fitted growth ${fitted?.let { "%.3f ms per minute".format(it) } ?: "not available"}")
         for (window in estimate.windows) {
             val seconds = window.centerFrame.toDouble() / estimate.sampleRate
             val offsetMs = window.offsetFrames * 1_000.0 / estimate.sampleRate
