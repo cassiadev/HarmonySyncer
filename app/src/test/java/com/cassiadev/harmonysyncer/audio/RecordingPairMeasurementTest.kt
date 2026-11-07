@@ -22,7 +22,7 @@ class RecordingPairMeasurementTest {
 
         val clipA = File(pathA!!).inputStream().buffered().use(::readWavPcm16)
         val clipB = File(pathB!!).inputStream().buffered().use(::readWavPcm16)
-        val estimate = estimateTimeOffsets(clipA, clipB)
+        val estimate = estimateTimeOffsets(clipA, clipB, System.getenv("RECORDING_PAIR_WINDOWS")?.toInt() ?: 3)
 
         println("RecordingPair: A ${clipA.samples.size} frames at ${clipA.sampleRate} Hz, B ${clipB.samples.size} frames at ${clipB.sampleRate} Hz")
         println("RecordingPair: compared at ${estimate.sampleRate} Hz, certain ${estimate.isCertain}, growth %.3f ms per minute".format(estimate.growthMsPerMinute))

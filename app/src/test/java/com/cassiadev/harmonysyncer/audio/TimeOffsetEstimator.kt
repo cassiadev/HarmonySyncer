@@ -47,11 +47,11 @@ internal fun buildTimingSignal(seconds: Int, rate: Int, seed: Long = TIMING_SIGN
 }
 
 /** Slides windows of A's sound along all of B. Clips at different rates are compared at the higher one. */
-internal fun estimateTimeOffsets(a: PcmClip, b: PcmClip): OffsetEstimate {
+internal fun estimateTimeOffsets(a: PcmClip, b: PcmClip, windowCount: Int = 3): OffsetEstimate {
     val (normalizedA, normalizedB) = normalizePreviewRates(a, b)
     val rate = normalizedA.sampleRate
     val windowFrames = WINDOW_SECONDS * rate
-    val starts = findWindowStarts(normalizedA.samples, windowFrames)
+    val starts = findWindowStarts(normalizedA.samples, windowFrames, windowCount)
     if (starts.isEmpty()) return OffsetEstimate(rate, listOf(WindowOffset(0, 0, 0.0)), 0.0, false)
 
     val size = (normalizedB.samples.size + windowFrames).takeHighestOneBit() * 2
@@ -92,14 +92,14 @@ private fun keepsSpacing(windows: List<WindowOffset>): Boolean = windows.zipWith
     abs(later.offsetFrames - earlier.offsetFrames) <= MAX_SPACING_ERROR * (later.centerFrame - earlier.centerFrame)
 }
 
-/** Where the start, middle and end windows of the sound begin, or nothing for silence. */
-private fun findWindowStarts(samples: ShortArray, windowFrames: Int): List<Int> {
+/** Where [windowCount] windows spread from the start to the end of the sound begin, or nothing for silence. */
+private fun findWindowStarts(samples: ShortArray, windowFrames: Int, windowCount: Int): List<Int> {
     val level = samples.maxOf { abs(it.toInt()) } * SOUND_LEVEL
     if (level == 0.0) return emptyList()
     val first = samples.indexOfFirst { abs(it.toInt()) >= level }
     val last = samples.indexOfLast { abs(it.toInt()) >= level }
     val lastStart = (last + 1 - windowFrames).coerceAtLeast(first)
-    return listOf(first, (first + lastStart) / 2, lastStart)
+    return List(windowCount) { first + (lastStart - first) * it / (windowCount - 1) }
 }
 
 /** Correlation of [window] with the target at every lag; a lag past the target's end wraps to negative. */

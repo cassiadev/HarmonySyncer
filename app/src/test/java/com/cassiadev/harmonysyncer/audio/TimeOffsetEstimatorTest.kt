@@ -104,6 +104,15 @@ class TimeOffsetEstimatorTest {
         assertFalse(estimateTimeOffsets(buildClip(signal), buildClip(signal.copyOf(10 * RATE))).isCertain)
     }
 
+    @Test
+    fun `more windows spread evenly across the sound`() {
+        val estimate = estimateTimeOffsets(buildClip(signal), buildClip(prepend(240, signal)), windowCount = 7)
+
+        assertEquals(List(7) { 240 }, estimate.windows.map { it.offsetFrames })
+        val gaps = estimate.windows.zipWithNext { earlier, later -> later.centerFrame - earlier.centerFrame }
+        assertTrue(gaps.toString(), gaps.max() - gaps.min() <= 1)
+    }
+
     private fun assertEveryWindow(expectedFrames: Int, estimate: OffsetEstimate) {
         assertEquals(List(3) { expectedFrames }, estimate.windows.map { it.offsetFrames })
         assertTrue(estimate.windows.toString(), estimate.isCertain)
