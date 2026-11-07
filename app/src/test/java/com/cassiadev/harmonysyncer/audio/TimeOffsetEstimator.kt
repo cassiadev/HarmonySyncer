@@ -10,7 +10,8 @@ internal const val TIMING_SIGNAL_SEED = 20_261_107L
 
 private const val WINDOW_SECONDS = 2
 private const val SOUND_LEVEL = 0.1
-private const val GUARD_MS = 5
+// Rivals nearer than this are the peak's own shape; 5 ms hid a wrong match, 0.25 ms dropped good windows.
+private const val GUARD_MS = 1
 // First guess: the best match must stand out twice as much as any other position.
 private const val MIN_PEAK_RATIO = 2.0
 // First guess: real clocks differ far less, so a wider gap means the windows matched different events.

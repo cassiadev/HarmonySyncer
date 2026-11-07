@@ -71,6 +71,14 @@ class TimeOffsetEstimatorTest {
         assertFalse(estimateTimeOffsets(buildClip(tone), buildClip(tone)).isCertain)
     }
 
+    /** Two equal copies 2 ms apart: nothing says which one is the sound, so a window may pick either. */
+    @Test
+    fun `an equal echo close to the peak is uncertain`() {
+        val echoed = ShortArray(signal.size) { (signal[it] / 2 + signal.getOrElse(it - 96) { 0 } / 2).toShort() }
+
+        assertFalse(estimateTimeOffsets(buildClip(signal), buildClip(echoed)).isCertain)
+    }
+
     @Test
     fun `clips that share nothing are uncertain`() {
         assertFalse(estimateTimeOffsets(buildClip(signal), buildClip(buildTimingSignal(20, RATE, seed = 1))).isCertain)
