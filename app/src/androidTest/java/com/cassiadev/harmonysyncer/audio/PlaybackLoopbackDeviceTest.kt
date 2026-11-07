@@ -23,6 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
@@ -137,7 +138,7 @@ class PlaybackLoopbackDeviceTest {
                     "position range ${found.minOrNull()}..${found.maxOrNull()} frames, largest step $largestStep frames",
             )
             report("continuity[$run] frames: ${offsets.joinToString()}")
-            report("continuity[$run] underrun lines that changed: ${after.filter { it !in before }}")
+            report("continuity[$run] underrun lines read ${before.size}, changed: ${findChangedLines(before, after)}")
         }
     }
 
@@ -224,14 +225,14 @@ class PlaybackLoopbackDeviceTest {
         val from = requestFrame + rate - rate / 100
         val until = requestFrame + rate * 17 / 10
         val threshold = (findBestMatch(capture.samples, buildBurst(CONTROL_SEED), from, until)?.coefficient ?: 0.0) * CONTROL_MARGIN
-        val first = findBestMatch(capture.samples, bursts[1], from, until)?.takeIf { it.coefficient >= threshold }
+        val first = findBestMatch(capture.samples, bursts[1], from, until)?.takeIf { standsOut(it.coefficient, threshold) }
             ?: return bursts.map { null }
         var expected = first.frame - requestFrame - rate
         val margin = rate * 15 / 100
         return bursts.mapIndexed { index, burst ->
             val place = requestFrame + index * rate
             findBestMatch(capture.samples, burst, place + expected - margin, place + expected + margin)
-                ?.takeIf { it.coefficient >= threshold }
+                ?.takeIf { standsOut(it.coefficient, threshold) }
                 ?.let { match -> (match.frame - place).also { if (index > 0) expected = it } }
         }
     }
@@ -293,6 +294,35 @@ class PlaybackLoopbackDeviceTest {
     }
 
     @Test
+    fun aCounterChangeShowsWhenAnotherThreadHasTheSameLine() {
+        val before = listOf("Output thread a", "partial=0 empty=2", "Output thread b", "partial=0 empty=0")
+        val after = listOf("Output thread a", "partial=0 empty=2", "Output thread b", "partial=0 empty=2")
+
+        assertEquals(listOf("line 3: partial=0 empty=0 -> partial=0 empty=2"), findChangedLines(before, after))
+    }
+
+    @Test
+    fun aDifferentLineCountShowsAsAChange() {
+        assertEquals(listOf("line count 2 -> 1"), findChangedLines(listOf("a", "b"), listOf("a")))
+    }
+
+    @Test
+    fun readsTheUnderrunCounters() {
+        val lines = readUnderrunLines()
+
+        assertTrue(lines.toString(), lines.any { "Normal mixer raw underrun" in it })
+    }
+
+    /** A silent capture gives a zero control, so the real threshold is zero too. */
+    @Test
+    fun digitalSilenceIsNotFoundAtAZeroThreshold() {
+        val silence = ShortArray(5 * RATE)
+
+        assertNull(findLatencyFrames(silence, buildNoiseClip(1), RATE, 0, Int.MAX_VALUE, 0.0))
+        assertNull(findSoundSpan(silence, buildNoiseClip(1), RATE, 0, Int.MAX_VALUE, 0.0))
+    }
+
+    @Test
     fun unmeasuredCaptureReportsNoAbsoluteLatency() {
         assertEquals("unmeasured", describeTiming(12_000, RATE, false))
         assertEquals("250.00 ms", describeTiming(12_000, RATE, true))
@@ -319,6 +349,17 @@ internal class ChunkMatch(val frame: Int, val coefficient: Double)
 
 /** The first and last 20 ms chunks of a clip found where they belong in a capture. */
 internal class SoundSpan(val firstChunk: Int, val lastChunk: Int)
+
+/** Lines that differ at the same position, so a change cannot hide behind another thread's equal line. */
+internal fun findChangedLines(before: List<String>, after: List<String>): List<String> {
+    val changed = before.zip(after).mapIndexedNotNull { index, (earlier, later) ->
+        "line $index: $earlier -> $later".takeIf { earlier != later }
+    }
+    return if (before.size == after.size) changed else changed + "line count ${before.size} -> ${after.size}"
+}
+
+/** Zero never counts: silence zeroes the control, and with it the threshold. */
+private fun standsOut(coefficient: Double, threshold: Double) = coefficient > 0.0 && coefficient >= threshold
 
 /** |normalized correlation| of [chunk] with [capture] at [frame]; 0 when it does not fit there. */
 internal fun coefficientAt(capture: ShortArray, chunk: ShortArray, frame: Int): Double {
@@ -350,7 +391,7 @@ internal fun findLatencyFrames(capture: ShortArray, clip: ShortArray, rate: Int,
     val expected = requestFrame + rate
     val chunk = clip.copyOfRange(rate, rate + rate / 10)
     val match = findBestMatch(capture, chunk, expected - rate / 100, minOf(expected + rate * 7 / 10, windowEnd))
-    return match?.takeIf { it.coefficient >= threshold }?.let { it.frame - expected }
+    return match?.takeIf { standsOut(it.coefficient, threshold) }?.let { it.frame - expected }
 }
 
 /** The best [coefficientAt] within five frames of where each 20 ms chunk of [clip] belongs after [startFrame]. */
@@ -368,7 +409,7 @@ internal fun findChunkCoefficients(capture: ShortArray, clip: ShortArray, rate: 
 internal fun findSoundSpan(capture: ShortArray, clip: ShortArray, rate: Int, startFrame: Int, windowEnd: Int, threshold: Double): SoundSpan? {
     val coefficients = findChunkCoefficients(capture, clip, rate, startFrame, windowEnd)
     val runStarts = (0..coefficients.size - SOUND_RUN_CHUNKS).filter { start ->
-        (start until start + SOUND_RUN_CHUNKS).all { coefficients[it] >= threshold }
+        (start until start + SOUND_RUN_CHUNKS).all { standsOut(coefficients[it], threshold) }
     }
     return if (runStarts.isEmpty()) null else SoundSpan(runStarts.first(), runStarts.last() + SOUND_RUN_CHUNKS - 1)
 }
