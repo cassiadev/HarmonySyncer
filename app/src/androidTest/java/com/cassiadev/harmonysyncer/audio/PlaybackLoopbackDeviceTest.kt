@@ -20,11 +20,13 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -296,6 +298,8 @@ class PlaybackLoopbackDeviceTest {
 
     @Test
     fun readsTheUnderrunCounters() {
+        // dumpsys wording differs between Android builds, so this checks only the phone being measured.
+        assumeTrue(arguments.getString("measurePlayback") == "true")
         val lines = readUnderrunLines()
 
         assertTrue(lines.toString(), lines.any { "Normal mixer raw underrun" in it })
@@ -309,6 +313,43 @@ class PlaybackLoopbackDeviceTest {
         val failure = assertThrows(IllegalStateException::class.java) { recordAround({ _, _ -> take }) {} }
 
         assertEquals("take ended before its capture stamp", failure.message)
+    }
+
+    /** Interrupted after its first stamp: the script must stop playing and the run must fail. */
+    @Test(timeout = 5_000)
+    fun aTakeThatStopsEarlyStopsThePlaybackAndFails() {
+        val failure = assertThrows(IllegalStateException::class.java) {
+            recordAround({ anchor, _ ->
+                anchor.stamp.complete(CaptureStamp(RATE, FrameTime(0, System.nanoTime()), true))
+                Thread.sleep(500)
+                RecordedTake(PcmClip(ShortArray(1), RATE), TakeStopReason.Interrupted, null)
+            }) { delay(60_000) }
+        }
+
+        assertEquals("take stopped early: Interrupted", failure.message)
+    }
+
+    @Test(timeout = 5_000)
+    fun aRecorderFailureStopsThePlaybackBeforeItSurfaces() {
+        val playing = AtomicBoolean(false)
+
+        val failure = assertThrows(IllegalStateException::class.java) {
+            recordAround({ anchor, _ ->
+                anchor.stamp.complete(CaptureStamp(RATE, FrameTime(0, System.nanoTime()), true))
+                Thread.sleep(500)
+                error("microphone gone")
+            }) {
+                playing.set(true)
+                try {
+                    delay(60_000)
+                } finally {
+                    playing.set(false)
+                }
+            }
+        }
+
+        assertEquals("microphone gone", failure.message)
+        assertFalse(playing.get())
     }
 
     /** A steady tone can beat the control by chance, because each search then reads one fixed value. */
@@ -325,7 +366,10 @@ class PlaybackLoopbackDeviceTest {
         val capture = buildFakeCapture(clip)
 
         assertNull(findLatencyFrames(capture, clip, RATE, 0, 64_700, 0.1))
-        assertEquals(8, findSoundSpan(capture, clip, RATE, 12_000, 12_000 + 9_603, 0.1)?.lastChunk)
+        // Chunk 9 sits at 20,640..21,600 and is tried up to five frames either side: kept while its own place fits,
+        // dropped once no place does. In between, a chance match at a shifted place can pass this low threshold.
+        assertEquals(9, findSoundSpan(capture, clip, RATE, 12_000, 12_000 + 9_600, 0.1)?.lastChunk)
+        assertEquals(8, findSoundSpan(capture, clip, RATE, 12_000, 12_000 + 9_594, 0.1)?.lastChunk)
     }
 
     /** A silent capture gives a zero control, so the real threshold is zero too. */
@@ -362,20 +406,24 @@ class PlaybackLoopbackDeviceTest {
 
 internal class RecordedRun(val take: RecordedTake, val firstFrameNanos: Long, val stamp: CaptureStamp)
 
-/** Runs [script] from just after the take's first kept sample, which is captured at [RecordedRun.firstFrameNanos]. */
+/**
+ * Runs [script] from just after the take's first kept sample, which is captured at [RecordedRun.firstFrameNanos].
+ * A take that ends early, or a recorder that throws, stops [script] and waits for it before the run fails.
+ */
 internal fun recordAround(record: (TakeAnchor, shouldStop: () -> Boolean) -> RecordedTake, script: suspend () -> Unit): RecordedRun {
     val anchor = TakeAnchor()
+    val playback = Job()
     val firstFrameNanos = AtomicLong()
     val finished = AtomicBoolean(false)
     val failure = AtomicReference<Throwable?>(null)
     val running = thread {
         try {
-            val stamp = runBlocking { anchor.stamp.await() }
+            val stamp = runBlocking(playback) { anchor.stamp.await() }
             val start = System.nanoTime() + COUNT_IN_LEAD_NANOS
             anchor.firstFrame = frameAt(start, stamp.time, stamp.sampleRate)
             firstFrameNanos.set(start)
             while (System.nanoTime() < start + 100_000_000L) Thread.sleep(1)
-            runBlocking { script() }
+            runBlocking(playback) { script() }
         } catch (thrown: Throwable) {
             failure.set(thrown)
         } finally {
@@ -386,9 +434,11 @@ internal fun recordAround(record: (TakeAnchor, shouldStop: () -> Boolean) -> Rec
         record(anchor, finished::get)
     } finally {
         anchor.stamp.cancel() // Wakes the thread above if the take ended before its first stamp.
+        playback.cancel()
+        running.join()
     }
-    running.join()
     check(!anchor.stamp.isCancelled) { "take ended before its capture stamp" }
+    check(take.stopReason == TakeStopReason.Requested) { "take stopped early: ${take.stopReason}" }
     failure.get()?.let { throw it }
     return RecordedRun(take, firstFrameNanos.get(), runBlocking { anchor.stamp.await() })
 }
@@ -441,13 +491,16 @@ internal fun findLatencyFrames(capture: ShortArray, clip: ShortArray, rate: Int,
     return match?.takeIf { standsOut(it.coefficient, threshold) }?.let { it.frame - expected }
 }
 
-/** The best [coefficientAt] within five frames of where each 20 ms chunk of [clip] belongs after [startFrame]. */
+/**
+ * The best [coefficientAt] within five frames of where each 20 ms chunk of [clip] belongs after [startFrame], trying
+ * only places that end by [windowEnd]; 0 when none does.
+ */
 internal fun findChunkCoefficients(capture: ShortArray, clip: ShortArray, rate: Int, startFrame: Int, windowEnd: Int): List<Double> {
     val length = rate / 50
     return (0 until clip.size / length).map { index ->
         val frame = startFrame + index * length
-        val tries = frame - 5..frame + 5
-        if (tries.last + length > windowEnd) return@map 0.0
+        val tries = (frame - 5..frame + 5).filter { it + length <= windowEnd }
+        if (tries.isEmpty()) return@map 0.0
         val chunk = clip.copyOfRange(index * length, (index + 1) * length)
         tries.maxOf { coefficientAt(capture, chunk, it) }
     }
