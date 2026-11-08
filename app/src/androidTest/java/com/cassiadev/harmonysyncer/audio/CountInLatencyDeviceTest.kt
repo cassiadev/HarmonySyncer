@@ -21,8 +21,10 @@ private const val BPM = 120
 private const val MEASURED_BEAT = 4L
 
 /**
- * Measures whether the count-in lands on the same sample in every take (design 9). The clicks play from the
- * speaker into the microphone, so run it somewhere quiet with the media volume at 70% or more and no earphones.
+ * Measures whether the count-in lands on the same sample in every take (design 9). Run it somewhere quiet.
+ * Without earphones the clicks play from the speaker into the microphone; set the media volume to 70% or more.
+ * With wired earphones plugged in, the clicks take the earphone path, as in a real take: hold the earbuds against
+ * the microphone and set the volume to the maximum, or the clicks get lost in the room noise.
  */
 class CountInLatencyDeviceTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
